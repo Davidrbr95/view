@@ -66,9 +66,14 @@ class InstrumentView(QWidget):
         # setup daq with livestreaming tasks
         self.setup_daqs()
 
+        self.log.info('MADE IT PAST DAQ SETUP')
+
         # Set up instrument widgets
         for device_name, device_specs in self.instrument.config['instrument']['devices'].items():
+            self.log.info(f"setup widgets device name: {device_name}")
             self.create_device_widgets(device_name, device_specs)
+        
+        self.log.info('MADE IT PAST create instrument widgets')
 
         # setup widget additional functionalities
         self.setup_camera_widgets()
@@ -78,8 +83,12 @@ class InstrumentView(QWidget):
         self.setup_filter_wheel_widgets()
         self.setup_stage_widgets()
 
+        self.log.info('MADE IT PAST setup instrument widgets')
+
         # add undocked widget so everything closes together
         self.add_undocked_widgets()
+
+        self.log.info('MADE IT PAST undock widgets')
 
         # Set app events
         app = QApplication.instance()
