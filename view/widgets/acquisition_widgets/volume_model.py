@@ -469,7 +469,8 @@ class VolumeModel(GLOrthoViewWidget):
                     tile = flattened[index]
                 # self.fov_position = [pos['x'], pos['y'], pos['z']] # I don't think we should have this? Creates a jumping effect
                 self.view_plane = plane  # make sure grid plane remains the same
-                self.fovMove.emit(tile)
+                print('TILE POSITION', tile, type)
+                self.fovMove.emit(list(tile))
 
             else:
                 return
