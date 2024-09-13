@@ -43,7 +43,7 @@ class VolumeWidget(QWidget):
 
         # create model and add extra checkboxes/inputs/buttons to customize volume model
         self.volume_model = VolumeModel(unit, coordinate_plane, fov_dimensions, fov_position, limits)
-        self.fovMoved = self.volume_model.fovMoved  # expose for ease of access
+        self.fovMove = self.volume_model.fovMove  # expose for ease of access
 
         checkboxes = QHBoxLayout()
         self.path_show = QCheckBox('Show Path')

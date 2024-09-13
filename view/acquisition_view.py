@@ -285,7 +285,7 @@ class AcquisitionView(QWidget):
         kwds['channels'] = self.instrument.config['instrument']['channels']
 
         volume_widget = VolumeWidget(self.instrument_view, **kwds)
-        volume_widget.fovMoved.connect(self.move_stage)
+        volume_widget.fovMove.connect(self.move_stage)
         volume_widget.fovStop.connect(self.stop_stage)
         self.instrument_view.snapshotTaken.connect(volume_widget.handle_snapshot)  # connect snapshot signal
         self.instrument_view.contrastChanged.connect(volume_widget.adjust_contrast)
