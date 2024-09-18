@@ -427,6 +427,8 @@ class VolumeModel(GLOrthoViewWidget):
         """Override mouseMoveEvent so user can't change view
         and allow user to move fov easier"""
 
+        #add FOV image check function VolumeModel.add_fov_image
+
         plane = self.view_plane
         view_pol = [self.polarity[self.coordinate_plane.index(plane[0])],
                     self.polarity[self.coordinate_plane.index(plane[1])],
@@ -467,10 +469,10 @@ class VolumeModel(GLOrthoViewWidget):
                     tree = spatial.KDTree(self.grid_coords.reshape([-1, 3]))
                     distance, index = tree.query(new_pos)
                     tile = flattened[index]
+                    pos = [tile[0], tile[1], tile[2]]
                 # self.fov_position = [pos['x'], pos['y'], pos['z']] # I don't think we should have this? Creates a jumping effect
                 self.view_plane = plane  # make sure grid plane remains the same
-                print('TILE POSITION', tile, type)
-                self.fovMove.emit(list(tile))
+                self.fovMove.emit(pos)
 
             else:
                 return
