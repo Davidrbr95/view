@@ -221,9 +221,19 @@ class NIWidget(BaseDeviceWidget):
         """Recursive function to format nested dictionary of ni task items"""
 
         parent = self.tree if parent is None else parent
+        print('Parent', parent)
         # TODO: This is haaaaaacky. but might be good for now
         iterable = self.mappedpathGet(self.exposed_branches.copy(), name.split('.'))
+        print('Iterable', iterable)
         items = []
+
+        if isinstance(iterable, (float, int, str)): 
+            # Create a tree item for scalar values and return early
+            item = QTreeWidgetItem(parent, [name.split('.')[-1], str(iterable)])  # Name and scalar value as item
+            items.append(item)
+            self.check_to_hide(f'{name}', item)
+            return items
+
         for i, item in enumerate(iterable):
             key = item if hasattr(iterable, 'keys') else str(i)  # account for yaml typed
             id = f'{name}.{key}'
