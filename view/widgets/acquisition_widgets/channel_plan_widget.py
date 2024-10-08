@@ -107,6 +107,10 @@ class ChannelPlanWidget(QTabWidget):
                             if type(prop_widget) in [QScrollableLineEdit, QSpinBox]:
                                 minimum = getattr(descriptor, 'minimum', float('-inf'))
                                 maximum = getattr(descriptor, 'maximum', float('inf'))
+                                if callable(minimum):
+                                    minimum = minimum(device_object)
+                                if callable(maximum):
+                                    maximum = maximum(device_object)
                                 step = getattr(descriptor, 'step', .1)
                                 delegates.append(QSpinItemDelegate(minimum=minimum, maximum=maximum, step=step))
                                 setattr(self, column_name + '_initial_value', prop_widget.value())
