@@ -102,7 +102,7 @@ class CameraWidget(BaseDeviceWidget):
         if hasattr(self, 'frame_time_ms_widget'):
             self.frame_time_ms_widget.validator().setDecimals(2)  # set frame time decimals to 2
         if hasattr(self, 'exposure_time_ms_widget'):
-            self.exposure_time_ms_widget.validator().setDecimals(2)  # set exposure time decimals to 2
+            self.exposure_time_ms_widget.validator().setDecimals(20)  # set exposure time decimals to 2
 
     def create_live_button(self):
         """Add live button"""

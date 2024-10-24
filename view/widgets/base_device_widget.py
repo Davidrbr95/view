@@ -230,6 +230,10 @@ class BaseDeviceWidget(QMainWindow):
                 self.log.warning(f'Attribute {name} cannot be set to {value} since it does not adhere to the schema'
                                  f' {schema}')
                 return
+        # old_value = self.__dict__.get(name, None)
+        # self.__dict__[name] = value
+        # if value != old_value:
+        #     self.ValueChangedOutside.emit(name)
         self.__dict__[name] = value
         if currentframe().f_back.f_locals.get('self', None) != self:  # call from outside so update widgets
             self.ValueChangedOutside.emit(name)

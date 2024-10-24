@@ -17,6 +17,7 @@ from view.widgets.miscellaneous_widgets.q_dock_widget_title_bar import QDockWidg
 from view.widgets.miscellaneous_widgets.q_scrollable_float_slider import QScrollableFloatSlider
 from view.widgets.miscellaneous_widgets.q_scrollable_line_edit import QScrollableLineEdit
 from pathlib import Path
+import traceback
 
 class AcquisitionView(QWidget):
     """"Class to act as a general acquisition view model to voxel instrument"""
@@ -494,7 +495,9 @@ class AcquisitionView(QWidget):
         """
 
         (image, camera_name) = args
+        # print('RAN update_acquisition_layer')
         if image is not None:
+            # print('Image is not None')
             # TODO: How to get current channel
             layer_name = f"{camera_name}"
             if layer_name in self.instrument_view.viewer.layers:
@@ -508,7 +511,7 @@ class AcquisitionView(QWidget):
         """Grab value of property and yield"""
 
         while True:  # best way to do this or have some sort of break?
-            sleep(1)
+            sleep(0.2)
             value = getattr(device, property_name)
             yield value, widget
 

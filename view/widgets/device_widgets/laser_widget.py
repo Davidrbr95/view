@@ -19,14 +19,11 @@ class LaserWidget(BaseDeviceWidget):
         self.slider_color = color
         super().__init__(type(laser), self.laser_properties)
         self.max_power_mw = getattr(type(laser).power_setpoint_mw, 'maximum', 110)(laser)
-        print('Define self.max_power_mw', self.max_power_mw)
-        print('Try get the power', self.power_setpoint_mw)
         self.add_power_slider()
 
     def add_power_slider(self):
         """Redo power widget to be slider"""
         textbox = self.power_setpoint_mw_widget
-        print('Check self.max_power_mw', self.max_power_mw)
         if type(textbox.validator()) == QDoubleValidator:
             textbox.validator().setRange(0.0, self.max_power_mw, decimals=2)
         elif type(textbox.validator()) == QIntValidator:

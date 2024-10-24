@@ -88,7 +88,11 @@ class ChannelPlanWidget(QTabWidget):
             for device_type, properties in self.properties.items():
                 if device_type in self.possible_channels[channel].keys():
                     for device_name in self.possible_channels[channel][device_type]:
-                        device_widget = getattr(instrument_view, f'{singularize(device_type)}_widgets')[device_name]
+                        # device_widget = getattr(instrument_view, f'{singularize(device_type)}_widgets')[device_name]
+                        device_widget = getattr(
+                        instrument_view,
+                        f'{singularize(device_type) if device_type != "tunable_lens" else device_type}_widgets'
+                        )[device_name]
                         device_object = getattr(instrument_view.instrument, device_type)[device_name]
                         for prop in properties:
                             # select delegate to use based on type
