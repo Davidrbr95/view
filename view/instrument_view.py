@@ -169,7 +169,7 @@ class InstrumentView(QWidget):
                 daq_widget.ValueChangedInside[str].connect(
                     lambda value, daq=self.instrument.daqs[daq_name]: self.write_waveforms(daq))
                 # update tasks if livestreaming task is different from data acquisition task
-                if daq_name in self.config.get('livestream_tasks', {}).keys():
+                if daq_name in self.config['instrument_view'].get('livestream_tasks', {}).keys():
                     daq_widget.ValueChangedInside[str].connect(lambda attr, widget=daq_widget, name=daq_name:
                                                                self.update_config_waveforms(widget, daq_name, attr))
 
@@ -237,7 +237,6 @@ class InstrumentView(QWidget):
         :param daq_name: name of daq
         :param attr_name: waveform attribute to update
         """
-
         path = attr_name.split('.')
         value = getattr(daq_widget, attr_name)
         self.log.debug(f'{daq_name} {attr_name} changed to {getattr(daq_widget, path[0])}')
@@ -247,10 +246,12 @@ class InstrumentView(QWidget):
 
         # update data_acquisition_tasks if value correlates
         key = path[-1]
+        
         try:
             dictionary = pathGet(self.config['acquisition_view']['data_acquisition_tasks'][daq_name], path[:-1])
             if key not in dictionary.keys():
                 raise KeyError
+            print(self.config['acquisition_view']['data_acquisition_tasks'][daq_name])
             dictionary[key] = value
             self.log.debug(f"Data acquisition tasks parameters updated to "
                            f"{self.config['acquisition_view']['data_acquisition_tasks'][daq_name]}")
@@ -373,6 +374,7 @@ class InstrumentView(QWidget):
         self.instrument.cameras[camera_name].abort()
         for daq_name, daq in self.instrument.daqs.items():
             daq.stop()
+            daq.write_zeros()
         for laser_name in self.channels[self.livestream_channel].get('lasers', []):
             self.instrument.lasers[laser_name].disable()
 
