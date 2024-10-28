@@ -218,9 +218,11 @@ class NIWidget(BaseDeviceWidget):
             maximum = getattr(self, f'{port}.device_max_volts', 5)
             minimum = getattr(self, f'{port}.device_min_volts',
                               0) if 'amplitude' not in name else -maximum  # allow for negative amplitude
+            print('Minimum', minimum)
+            print('Maximum', maximum)
             slider.setMaximum(maximum)
             slider.setMinimum(minimum)
-            textbox.validator().setRange(minimum, maximum, decimals=3)
+            textbox.validator().setRange(minimum, maximum, decimals=6)
 
         slider.setValue(getattr(self, f'{name}'))
 
@@ -277,6 +279,7 @@ class NIWidget(BaseDeviceWidget):
                 self.tree.setItemWidget(item, 1, widget)
             else:
                 item = QTreeWidgetItem(parent, [key])
+                print('Tree', f'{name}.{key}')
                 children = self.create_tree_widget(f'{name}.{key}', item)
                 item.addChildren(children)
             items.append(item)
