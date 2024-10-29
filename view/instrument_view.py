@@ -445,17 +445,24 @@ class InstrumentView(QWidget):
         """
         Create widget to select which laser to livestream with
         """
-
         widget = QWidget()
         widget_layout = QVBoxLayout()
 
         laser_button_group = QButtonGroup(widget)
+        buttons = []
         for channel, specs in self.channels.items():
             button = QRadioButton(str(channel))
-            button.setChecked(True)  # Arbitrarily set last button checked
-            button.toggled.connect(lambda value, ch=channel: self.change_channel(value, ch))
+            buttons.append((button, channel))
             laser_button_group.addButton(button)
             widget_layout.addWidget(button)
+        # After creating all buttons, set the default checked button
+        if buttons:
+            button, channel = buttons[-1]  # Arbitrarily set last button checked
+            button.setChecked(True)
+            self.livestream_channel = channel
+        # Now connect the signals
+        for button, channel in buttons:
+            button.toggled.connect(lambda value, ch=channel: self.change_channel(value, ch))
         widget.setLayout(widget_layout)
         widget.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Minimum)
         self.viewer.window.add_dock_widget(widget, area='bottom', name='Channels')
