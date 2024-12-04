@@ -251,7 +251,6 @@ class InstrumentView(QWidget):
             dictionary = pathGet(self.config['acquisition_view']['data_acquisition_tasks'][daq_name], path[:-1])
             if key not in dictionary.keys():
                 raise KeyError
-            print(self.config['acquisition_view']['data_acquisition_tasks'][daq_name])
             dictionary[key] = value
             self.log.debug(f"Data acquisition tasks parameters updated to "
                            f"{self.config['acquisition_view']['data_acquisition_tasks'][daq_name]}")
@@ -375,6 +374,7 @@ class InstrumentView(QWidget):
         for daq_name, daq in self.instrument.daqs.items():
             daq.stop()
             daq.write_zeros()
+
         for laser_name in self.channels[self.livestream_channel].get('lasers', []):
             self.instrument.lasers[laser_name].disable()
 

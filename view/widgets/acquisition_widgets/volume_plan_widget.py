@@ -18,7 +18,9 @@ from qtpy.QtWidgets import (
     QCheckBox,
     QTableWidget,
     QTableWidgetItem,
-    QSizePolicy
+    QSizePolicy,
+    QPushButton,
+    QFileDialog
 )
 from typing import Literal, Union, Generator
 
@@ -53,7 +55,6 @@ class GridFromEdges(useq.GridFromEdges):
         else:
             for tile in reversed(list(super().iter_grid_positions(*args, **kwargs))):
                 yield tile
-
 
 class GridWidthHeight(useq.GridWidthHeight):
     """Subclassing useq.GridWidthHeight to add row and column attributes and allow reversible order"""
@@ -165,7 +166,7 @@ class VolumePlanWidget(QMainWindow):
         self.button_group.addButton(self.number_button)
         self.number_widget = create_widget('H',
                                            QLabel('Rows:'), self.rows,
-                                           QLabel('Cols:'), self.columns)
+                                           QLabel('Co ls:'), self.columns)
         self.number_widget.layout().setAlignment(Qt.AlignLeft)
         layout.addWidget(create_widget('H', self.number_button, self.number_widget))
         layout.addWidget(line())
@@ -211,21 +212,45 @@ class VolumePlanWidget(QMainWindow):
             high.setDecimals(3)
             high.setValue(0)
             setattr(self, f'dim_{i}_high', high)
+        
+        # For z-coordinate (dim_2)
+        self.dim_2_low = QDoubleSpinBox()
+        self.dim_2_low.setSizePolicy(QSizePolicy.Policy(7), QSizePolicy.Policy(0))
+        self.dim_2_low.setSuffix(f" {self.unit}")
+        self.dim_2_low.setRange(*self.limits[2])
+        self.dim_2_low.setDecimals(3)
+        self.dim_2_low.setValue(0)
+
+        self.dim_2_high = QDoubleSpinBox()
+        self.dim_2_high.setSizePolicy(QSizePolicy.Policy(7), QSizePolicy.Policy(0))
+        self.dim_2_high.setSuffix(f" {self.unit}")
+        self.dim_2_high.setRange(*self.limits[2])
+        self.dim_2_high.setDecimals(3)
+        self.dim_2_high.setValue(0)
 
         # create labels based on polarity
         polarity = [1 if '-' not in x else -1 for x in coordinate_plane]
-        dim_0_low_label = QLabel('Left: ') if polarity[0] == 1 else QLabel('Right: ')
-        dim_0_high_label = QLabel('Right: ') if polarity[0] == 1 else QLabel('Left: ')
-        dim_1_low_label = QLabel('Bottom: ') if polarity[1] == 1 else QLabel('Top: ')
-        dim_1_high_label = QLabel('Top: ') if polarity[0] == 1 else QLabel('Bottom: ')
+        dim_0_low_label = QLabel('Z_start: ') if polarity[0] == 1 else QLabel('Z_end: ')
+        dim_0_high_label = QLabel('Z_end: ') if polarity[0] == 1 else QLabel('Z_start: ')
+        dim_1_low_label = QLabel('Y_start: ') if polarity[1] == 1 else QLabel('Y_end: ')
+        dim_1_high_label = QLabel('Y_end: ') if polarity[0] == 1 else QLabel('Y_start: ')
 
+        polarity_z = 1 if '-' not in self.coordinate_plane[2] else -1
+        dim_2_low_label = QLabel('X_start') if polarity_z == 1 else QLabel('X_end')
+        dim_2_high_label = QLabel('X_end') if polarity_z == 1 else QLabel('X_start')
         # add to layout
         self.bounds_button = QRadioButton()
         self.bounds_button.clicked.connect(lambda: setattr(self, 'mode', 'bounds'))
         self.button_group.addButton(self.bounds_button)
-        self.bounds_widget = create_widget('VH',
-                                           dim_0_low_label, dim_0_high_label, self.dim_0_low, self.dim_0_high,
-                                           dim_1_low_label, dim_1_high_label, self.dim_1_low, self.dim_1_high)
+        self.bounds_widget = create_widget(
+                                        'VH',
+                                        dim_0_low_label, self.dim_0_low,
+                                        dim_0_high_label, self.dim_0_high,
+                                        dim_1_low_label, self.dim_1_low,
+                                        dim_1_high_label, self.dim_1_high,
+                                        dim_2_low_label, self.dim_2_low,
+                                        dim_2_high_label, self.dim_2_high
+                                    )
         self.bounds_widget.layout().setAlignment(Qt.AlignLeft)
         layout.addWidget(create_widget('H', self.bounds_button, self.bounds_widget))
         layout.addWidget(line())
@@ -285,6 +310,9 @@ class VolumePlanWidget(QMainWindow):
         self.dim_0_high.valueChanged.connect(self._on_change)
         self.dim_1_low.valueChanged.connect(self._on_change)
         self.dim_0_low.valueChanged.connect(self._on_change)
+        self.dim_2_high.valueChanged.connect(self._on_change)
+        self.dim_2_low.valueChanged.connect(self._on_change)
+
         self.rows.valueChanged.connect(self._on_change)
         self.columns.valueChanged.connect(self._on_change)
         self.area_width.valueChanged.connect(self._on_change)
@@ -327,6 +355,108 @@ class VolumePlanWidget(QMainWindow):
 
         self.mode = 'number'  # initialize mode
         self.update_tile_table(self.value())  # initialize table
+
+        self.load_xml_button = QPushButton("Load Bounding Boxes")
+        self.load_xml_button.clicked.connect(self.load_bounding_boxes)
+        layout.addWidget(self.load_xml_button)
+        self.bounding_box_dropdown = QComboBox()
+        self.bounding_box_dropdown.addItem("Select Bounding Box")
+        self.bounding_box_dropdown.currentIndexChanged.connect(self.bounding_box_selected)
+        layout.addWidget(self.bounding_box_dropdown)
+    
+    def update_bounding_box_dropdown(self, bounding_boxes):
+        self.bounding_boxes = bounding_boxes  # Store for later use
+        self.bounding_box_dropdown.blockSignals(True)
+        self.bounding_box_dropdown.clear()
+        self.bounding_box_dropdown.addItem("Select Bounding Box")
+        self.bounding_box_dropdown.addItems(bounding_boxes.keys())
+        self.bounding_box_dropdown.blockSignals(False)
+
+    def bigstitcher_to_stage_position(self, bigstitcher_x, bigstitcher_y, bigstitcher_z):
+        size_x = 0.18  # μm
+        size_y = 0.18  # μm
+        size_z = 0.18  # μm
+        theta_deg = 74.0  # degrees
+        
+        # Calculate effective voxel size in y-direction
+        theta_rad = np.deg2rad(theta_deg)
+        size_y_eff = size_y * np.cos(theta_rad)
+        
+        # Scaling factors
+        scale_x = size_x / size_y_eff
+        scale_y = 1.0
+        scale_z = size_z / size_y_eff
+        
+        # Invert the shift equations
+        x_position_mm = (size_x * bigstitcher_x) / (scale_x * 1000)
+        y_position_mm = -(size_y_eff * bigstitcher_y) / (scale_y * 1000)
+        z_position_mm = -(size_z * bigstitcher_z) / (scale_z * 1000)
+    
+        return x_position_mm, y_position_mm, z_position_mm
+    
+    def bounding_box_selected(self, index):
+        if index == 0:
+            return  # "Select Bounding Box" selected
+        name = self.bounding_box_dropdown.currentText()
+        bbox = self.bounding_boxes[name]
+        min_coords = bbox['min']
+        min_coords = [min_coords[2], min_coords[0], min_coords[1]]
+        max_coords = bbox['max']
+        max_coords = [max_coords[2], max_coords[0], max_coords[1]]
+
+        print('Min coords', min_coords)
+        print('Max coords', max_coords)
+
+        # Convert coordinates using your function
+        stage_min = self.bigstitcher_to_stage_position(*min_coords)
+        stage_max = self.bigstitcher_to_stage_position(*max_coords)
+
+        # Update the bounds widget min and max coordinates
+        # Assuming dim_0 corresponds to X, dim_1 to Y, dim_2 to Z
+        self.dim_0_low.setValue(stage_min[2])  # Z_start
+        self.dim_0_high.setValue(stage_max[2])  # z_end
+        self.dim_1_low.setValue(stage_min[1])  # Y_start
+        self.dim_1_high.setValue(stage_max[1])  # Y_end
+        self.dim_2_low.setValue(stage_min[0])  # x_start
+        self.dim_2_high.setValue(stage_max[0])  # x_end
+
+        # Switch to bounds mode if not already in that mode
+        if self.mode != 'bounds':
+            self.mode = 'bounds'
+
+        # Trigger an update
+        self._on_change()
+
+
+    def load_bounding_boxes(self):
+        # Open file dialog to select XML file
+        xml_file, _ = QFileDialog.getOpenFileName(self, "Open XML File", "", "XML Files (*.xml)")
+        if not xml_file:
+            return  # User canceled or closed the dialog
+
+        # Parse the XML file
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+
+        # Find all BoundingBoxDefinition elements
+        bounding_boxes = {}
+        for bbox_def in root.findall('.//BoundingBoxDefinition'):
+            name = bbox_def.get('name')
+            min_coords_text = bbox_def.find('min').text.strip()
+            max_coords_text = bbox_def.find('max').text.strip()
+
+            # Split the coordinates and convert to floats
+            min_coords = list(map(float, min_coords_text.split()))
+            max_coords = list(map(float, max_coords_text.split()))
+
+            # The coordinates are in the order [bigstitcher_y, bigstitcher_z, bigstitcher_x]
+            # Store them in a dictionary with the name as the key
+            bounding_boxes[name] = {'min': min_coords, 'max': max_coords}
+
+        # Update the dropdown menu with the names
+        self.update_bounding_box_dropdown(bounding_boxes)
+
 
     def update_tile_table(self, value: Union[GridRowsColumns, GridFromEdges, GridWidthHeight]) -> None:
         """
@@ -577,24 +707,55 @@ class VolumePlanWidget(QMainWindow):
         self._scan_starts[:, :] = value[2]
         self._on_change()
 
+    # @property
+    # def tile_positions(self) -> [[float, float, float]]:
+    #     """
+    #     Creates 3d list of tile positions based on widget values
+    #     :return: 3D list of tile coordinates
+    #     """
+
+    #     value = self.value()
+    #     coords = np.zeros((value.rows, value.columns, 3))
+    #     if self._mode != "bounds":
+    #         for tile in value:
+    #             coords[tile.row, tile.col, :] = [tile.x + self.grid_offset[0],
+    #                                           tile.y + self.grid_offset[1],
+    #                                           self._scan_starts[tile.row][tile.col]]
+    #     else:
+    #         for tile in value:
+    #             coords[tile.row, tile.col, :] = [tile.x, tile.y, self._scan_starts[tile.row][tile.col]]
+    #     return coords
+
     @property
     def tile_positions(self) -> [[float, float, float]]:
         """
-        Creates 3d list of tile positions based on widget values
+        Creates 3D list of tile positions based on widget values
         :return: 3D list of tile coordinates
         """
-
         value = self.value()
-        coords = np.zeros((value.rows, value.columns, 3))
+        tile_rows = [tile.row for tile in value]
+        tile_cols = [tile.col for tile in value]
+        max_row = max(tile_rows)
+        max_col = max(tile_cols)
+        coords = np.zeros((max_row + 1, max_col + 1, 3))
+
         if self._mode != "bounds":
             for tile in value:
-                coords[tile.row, tile.col, :] = [tile.x + self.grid_offset[0],
-                                              tile.y + self.grid_offset[1],
-                                              self._scan_starts[tile.row][tile.col]]
+                coords[tile.row, tile.col, :] = [
+                    tile.x + self.grid_offset[0],
+                    tile.y + self.grid_offset[1],
+                    self._scan_starts[tile.row][tile.col],
+                ]
         else:
             for tile in value:
-                coords[tile.row, tile.col, :] = [tile.x, tile.y, self._scan_starts[tile.row][tile.col]]
+                coords[tile.row, tile.col, :] = [
+                    tile.x,
+                    tile.y,
+                    self._scan_starts[tile.row][tile.col],
+                ]
         return coords
+
+
 
     @property
     def tile_visibility(self) -> np.ndarray:
@@ -623,6 +784,21 @@ class VolumePlanWidget(QMainWindow):
         """
         return self._scan_ends
 
+    # def _on_change(self) -> None:
+    #     """
+    #     Function called when things are changed within the widget. Handles formatting start, end, and visibility
+    #     of tiles and emits signal when done.
+    #     """
+    #     if (val := self.value()) is None:
+    #         return  # pragma: no cover
+    #     # update sizes of arrays
+    #     if (val.rows, val.columns) != self._scan_starts.shape:
+    #         self._tile_visibility = np.resize(self._tile_visibility, [val.rows, val.columns])
+    #         self._scan_starts = np.resize(self._scan_starts, [val.rows, val.columns])
+    #         self._scan_ends = np.resize(self._scan_ends, [val.rows, val.columns])
+    #     self.update_tile_table(val)
+    #     self.valueChanged.emit(val)
+
     def _on_change(self) -> None:
         """
         Function called when things are changed within the widget. Handles formatting start, end, and visibility
@@ -630,13 +806,39 @@ class VolumePlanWidget(QMainWindow):
         """
         if (val := self.value()) is None:
             return  # pragma: no cover
-        # update sizes of arrays
-        if (val.rows, val.columns) != self._scan_starts.shape:
-            self._tile_visibility = np.resize(self._tile_visibility, [val.rows, val.columns])
-            self._scan_starts = np.resize(self._scan_starts, [val.rows, val.columns])
-            self._scan_ends = np.resize(self._scan_ends, [val.rows, val.columns])
+
+        # Calculate max indices
+        tile_rows = [tile.row for tile in val]
+        tile_cols = [tile.col for tile in val]
+        max_row = max(tile_rows)
+        max_col = max(tile_cols)
+
+        # Update sizes of arrays based on max indices
+        if (max_row + 1, max_col + 1) != self._scan_starts.shape:
+            self._tile_visibility = np.resize(self._tile_visibility, [max_row + 1, max_col + 1])
+            self._scan_starts = np.resize(self._scan_starts, [max_row + 1, max_col + 1])
+            self._scan_ends = np.resize(self._scan_ends, [max_row + 1, max_col + 1])
+
+        # Only update _scan_starts and _scan_ends if mode is 'bounds'
+        if self._mode == 'bounds':
+            if self.apply_all:
+                self._scan_starts[:, :] = self.dim_2_low.value()
+                self._scan_ends[:, :] = self.dim_2_high.value()
+            else:
+                # Only update the first tile
+                self._scan_starts[0, 0] = self.dim_2_low.value()
+                self._scan_ends[0, 0] = self.dim_2_high.value()
+        elif self._mode == 'number':
+            # Reset to current stage position
+            current_z = self.fov_position[2]
+            if self.apply_all:
+                self._scan_starts[:, :] = current_z
+            else:
+                self._scan_starts[0, 0] = current_z
+
         self.update_tile_table(val)
         self.valueChanged.emit(val)
+
 
     @property
     def mode(self) -> Literal['number', 'area', 'bounds']:
@@ -696,6 +898,8 @@ class VolumePlanWidget(QMainWindow):
                 left=self.dim_0_low.value(),
                 bottom=self.dim_1_low.value(),
                 right=self.dim_0_high.value(),
+                z_start=self.dim_2_low.value(),
+                z_end=self.dim_2_high.value(),
                 **common,
             )
         elif self._mode == 'area':
@@ -712,4 +916,3 @@ def line():
     frame = QFrame()
     frame.setFrameShape(QFrame.HLine)
     return frame
-

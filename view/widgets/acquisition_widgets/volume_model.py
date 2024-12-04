@@ -239,6 +239,8 @@ class VolumeModel(GLOrthoViewWidget):
                         opacity = self.active_tile_opacity
                     elif self.view_plane == (self.coordinate_plane[2], self.coordinate_plane[1]):
                         opacity = self.active_tile_opacity / total_columns
+                    elif self.view_plane == (self.coordinate_plane[2], self.coordinate_plane[0]):
+                        opacity = self.active_tile_opacity / total_columns
                     else:
                         opacity = self.active_tile_opacity / total_rows
 
@@ -327,6 +329,8 @@ class VolumeModel(GLOrthoViewWidget):
         root = sqrt(2.0) / 2.0
         if view_plane == (self.coordinate_plane[0], self.coordinate_plane[1]):
             self.opts['rotation'] = QQuaternion(-1, 0, 0, 0)
+        # elif view_plane == (self.coordinate_plane[2], self.coordinate_plane[0]):
+        #      self.opts['rotation'] = QQuaternion(root, -root, 0, 0)
         else:
             self.opts['rotation'] = QQuaternion(-root, 0, -root, 0) if \
                 view_plane == (self.coordinate_plane[2], self.coordinate_plane[1]) else QQuaternion(-root, root, 0, 0)
@@ -349,7 +353,9 @@ class VolumeModel(GLOrthoViewWidget):
                      self.coordinate_plane[0] + self.coordinate_plane[2]:
                          [sqrt((pos[view_plane[0]] - x) ** 2 + (pos[view_plane[1]] - z) ** 2) for x, y, z in coords],
                      self.coordinate_plane[2] + self.coordinate_plane[1]:
-                         [sqrt((pos[view_plane[0]] - z) ** 2 + (pos[view_plane[1]] - y) ** 2) for x, y, z in coords]}
+                         [sqrt((pos[view_plane[0]] - z) ** 2 + (pos[view_plane[1]] - y) ** 2) for x, y, z in coords],
+                     self.coordinate_plane[2] + self.coordinate_plane[0]: [  # Added for (z, x) plane
+                          sqrt((pos[view_plane[0]] - z) ** 2 + (pos[view_plane[1]] - x) ** 2) for x, y, z in coords]}
         max_index = distances[''.join(view_plane)].index(max(distances[''.join(view_plane)], key=abs))
         furthest_tile = {self.coordinate_plane[0]: coords[max_index][0],
                          self.coordinate_plane[1]: coords[max_index][1],
@@ -368,6 +374,7 @@ class VolumeModel(GLOrthoViewWidget):
             horz_dist = (abs(pos[x] - furthest_tile[x]) + (fov[x] * 2)) / 2 * tan(radians(self.opts['fov']))
         # Vertical sizing, if fov_position is within grid or farthest distance is between grid tiles
         y = view_plane[1]
+        
         scaling = (self.size().width() / self.size().height())
         if extrema[f'{y}_min'] <= pos[y] <= extrema[f'{y}_max'] or \
                 abs(furthest_tile[y] - pos[y]) < abs(extrema[f'{y}_max'] - extrema[f'{y}_min']):

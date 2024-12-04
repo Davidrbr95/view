@@ -155,7 +155,7 @@ class AcquisitionView(QWidget):
         self.update_tiles()
 
         if self.instrument_view.grab_frames_worker.is_running:  # stop livestream if running
-            self.instrument_view.dismantle_live()
+            self.instrument_view.grab_frames_worker.quit()
 
         # write correct daq values if different from livestream
         for daq_name, daq in self.instrument.daqs.items():
@@ -207,7 +207,7 @@ class AcquisitionView(QWidget):
         # unanchor grid in volume widget
         # anchor grid in volume widget
         for anchor, widget in zip(self.volume_plan.anchor_widgets, self.volume_plan.grid_offset_widgets):
-            anchor.setChecked(False)
+            anchor.setChecked(True)
             widget.setDisabled(False)
         self.volume_plan.tile_table.setDisabled(False)
         self.channel_plan.setDisabled(False)
