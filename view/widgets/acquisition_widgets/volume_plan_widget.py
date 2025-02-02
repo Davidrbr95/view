@@ -257,7 +257,7 @@ class VolumePlanWidget(QMainWindow):
 
         self.overlap = QDoubleSpinBox()
         self.overlap.setRange(-100, 100)
-        self.overlap.setValue(0)
+        self.overlap.setValue(10)
         self.overlap.setSuffix(" %")
         overlap_widget = create_widget('H', QLabel('Overlap: '), self.overlap)
         overlap_widget.layout().setAlignment(Qt.AlignLeft)
@@ -373,6 +373,7 @@ class VolumePlanWidget(QMainWindow):
         self.bounding_box_dropdown.blockSignals(False)
 
     def bigstitcher_to_stage_position(self, bigstitcher_x, bigstitcher_y, bigstitcher_z):
+        # TODO: Make this not a hard code
         size_x = 0.18  # μm
         size_y = 0.18  # μm
         size_z = 0.18  # μm

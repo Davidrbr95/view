@@ -5,7 +5,7 @@ from view.widgets.acquisition_widgets.metadata_widget import MetadataWidget
 from view.widgets.acquisition_widgets.volume_plan_widget import VolumePlanWidget, GridFromEdges, GridWidthHeight, GridRowsColumns
 from view.widgets.acquisition_widgets.volume_model import VolumeModel
 from view.widgets.acquisition_widgets.channel_plan_widget import ChannelPlanWidget
-from qtpy.QtCore import Slot, Qt
+from qtpy.QtCore import Slot, Qt, Signal
 import inflection
 from time import sleep
 from qtpy.QtWidgets import QGridLayout, QWidget, QComboBox, QSizePolicy, QScrollArea, QDockWidget, \
@@ -22,6 +22,7 @@ import numpy as np
 
 class AcquisitionView(QWidget):
     """"Class to act as a general acquisition view model to voxel instrument"""
+    valueChanged = Signal((str))
 
     def __init__(self, acquisition,
                  instrument_view,
@@ -42,6 +43,11 @@ class AcquisitionView(QWidget):
         self.config = instrument_view.config
         self.coordinate_plane = self.config['acquisition_view']['coordinate_plane']
         self.unit = self.config['acquisition_view']['unit']
+        
+        # self.instrument_view.active_camera.valueChanged.connect(self._camera_change)
+        
+        ## TEST THE button callname camera
+        print('Trying to find napari viewer', self.instrument_view.active_camera)
 
         # Eventual threads
         self.grab_fov_positions_worker = None
@@ -121,6 +127,11 @@ class AcquisitionView(QWidget):
         app.aboutToQuit.connect(self.update_config_on_quit)  # query if config should be saved and where
         self.config_save_to = self.acquisition.config_path
         app.lastWindowClosed.connect(self.close)  # shut everything down when closing
+
+    def _camera_change(self):
+        print('WE are on camera change function')
+        print(self.config['acquisition_view']['fov_dimensions_new'][self.instrument_view.active_camera])
+        self.volume_plan.fov_dimensions = self.config['acquisition_view']['fov_dimensions_new'][self.instrument_view.active_camera]
 
     def create_start_button(self) -> QPushButton:
         """
@@ -296,7 +307,7 @@ class AcquisitionView(QWidget):
         except KeyError:
             raise KeyError('Coordinate plane must match instrument axes in tiling_stages')
 
-        fov_dimensions = self.config['acquisition_view']['fov_dimensions']
+        fov_dimensions = self.config['acquisition_view']['fov_dimensions']#[self.instrument_view.active_camera]
 
         acquisition_widget = QSplitter(Qt.Vertical)
         acquisition_widget.setChildrenCollapsible(False)
@@ -361,6 +372,8 @@ class AcquisitionView(QWidget):
         self.volume_plan.valueChanged.connect(self.volume_plan_changed)
         self.channel_plan.channelAdded.connect(self.channel_plan_changed)
         self.channel_plan.channelChanged.connect(self.update_tiles)
+        
+        # print('SEE TILES IN main create widgets', self.acquisition.config['acquisition']['tiles'])
 
         # TODO: This feels like a clunky connection. Works for now but could probably be improved
         self.volume_plan.header.startChanged.connect(lambda i: self.create_tile_list())
@@ -384,6 +397,7 @@ class AcquisitionView(QWidget):
         Update channel plan and volume model when volume plan is changed
         :param value: new value from volume_plan
         """
+        ## TODO: Check to make sure the FOV dimension selected is still the same
 
         tile_volumes = self.volume_plan.scan_ends - self.volume_plan.scan_starts
 

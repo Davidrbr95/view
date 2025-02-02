@@ -44,6 +44,9 @@ class InstrumentView(QWidget):
         for logger in loggers:
             logger.setLevel(log_level)
 
+        # initialize camera name tracker
+        self.active_camera = None
+
         # Eventual widget groups
         self.laser_widgets = {}
         self.daq_widgets = {}
@@ -77,6 +80,7 @@ class InstrumentView(QWidget):
 
         # Set up instrument widgets
         for device_name, device_specs in self.instrument.config['instrument']['devices'].items():
+            print(device_name, device_specs)
             self.create_device_widgets(device_name, device_specs)
 
         # setup widget additional functionalities
@@ -95,7 +99,6 @@ class InstrumentView(QWidget):
         app.aboutToQuit.connect(self.update_config_on_quit)  # query if config should be saved and where
         self.config_save_to = self.config_path
         app.lastWindowClosed.connect(self.close)  # shut everything down when closing
-
 
     def setup_daqs(self)-> None:
         """
@@ -284,16 +287,29 @@ class InstrumentView(QWidget):
             live_button.pressed.connect(lambda button=live_button: disable_button(button))  # disable to avoid spamming
             live_button.pressed.connect(lambda camera=camera_name: self.setup_live(camera))
             live_button.pressed.connect(lambda camera=camera_name: self.toggle_live_button(camera))
+            # live_button.pressed.connect(lambda camera=camera_name: self.record_active_camera(camera))
+
 
         stacked = self.stack_device_widgets('camera')
+        # TODO: get this value form the stack
+        self.active_camera = 'ODO_camera'
+
+        ## figure A WAY TO GET THE CAMERA NAME FROM THE STACKED WIDGET 
+        ## THEN ADD A  RECORD ACTIVE CAMERA HERE
         self.viewer.window.add_dock_widget(stacked, area='right', name='Cameras')
+
+    # def record_active_camera(self, camera_name: str) -> None:
+        
+    #     self.active_camera = camera_name
+    #     print('Current active camera', self.active_camera)
 
     def toggle_live_button(self, camera_name: str) -> None:
         """
         Toggle text and functionality of live button when pressed
         :param camera_name: name of camera to set up
         """
-
+        self.active_camera = camera_name
+        print('Current active camera', self.active_camera)
         live_button = getattr(self.camera_widgets[camera_name], 'live_button', QPushButton())
         live_button.disconnect()
         if live_button.text() == 'Live':
