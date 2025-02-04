@@ -38,13 +38,15 @@ class AcquisitionView(QWidget):
         self.log.setLevel(log_level)
 
         self.instrument_view = instrument_view
+        self._active_camera = self.instrument_view.active_camera
         self.acquisition = acquisition
+        self.acquisition.active_camera = self.instrument_view.active_camera
         self.instrument = self.acquisition.instrument
         self.config = instrument_view.config
         self.coordinate_plane = self.config['acquisition_view']['coordinate_plane']
         self.unit = self.config['acquisition_view']['unit']
         
-        # self.instrument_view.active_camera.valueChanged.connect(self._camera_change)
+        self.instrument_view.activeCameraChanged.connect(self.on_active_camera_changed)
         
         ## TEST THE button callname camera
         print('Trying to find napari viewer', self.instrument_view.active_camera)
@@ -128,10 +130,22 @@ class AcquisitionView(QWidget):
         self.config_save_to = self.acquisition.config_path
         app.lastWindowClosed.connect(self.close)  # shut everything down when closing
 
-    def _camera_change(self):
-        print('WE are on camera change function')
-        print(self.config['acquisition_view']['fov_dimensions_new'][self.instrument_view.active_camera])
-        self.volume_plan.fov_dimensions = self.config['acquisition_view']['fov_dimensions_new'][self.instrument_view.active_camera]
+    @property
+    def active_camera(self) -> str:
+        """Active camera name for the entire acquisition."""
+        return self._active_camera
+
+    @active_camera.setter
+    def active_camera(self, camera_name: str):
+        self._active_camera = camera_name
+
+    def on_active_camera_changed(self):
+        fov_dimensions = self.config['acquisition_view']['fov_dimensions_new'][self.instrument_view.active_camera]
+        fov_dimensions = [fov_dimensions[0], fov_dimensions[1], 0]
+        self.volume_plan.fov_dimensions = fov_dimensions
+        self.volume_model.fov_dimensions = fov_dimensions
+        self.active_camera = self.instrument_view.active_camera
+        self.acquisition.active_camera = self.instrument_view.active_camera
 
     def create_start_button(self) -> QPushButton:
         """
@@ -307,7 +321,7 @@ class AcquisitionView(QWidget):
         except KeyError:
             raise KeyError('Coordinate plane must match instrument axes in tiling_stages')
 
-        fov_dimensions = self.config['acquisition_view']['fov_dimensions']#[self.instrument_view.active_camera]
+        fov_dimensions = self.config['acquisition_view']['fov_dimensions_new'][self.instrument_view.active_camera]
 
         acquisition_widget = QSplitter(Qt.Vertical)
         acquisition_widget.setChildrenCollapsible(False)

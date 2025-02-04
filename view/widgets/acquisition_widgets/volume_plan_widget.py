@@ -405,9 +405,6 @@ class VolumePlanWidget(QMainWindow):
         max_coords = bbox['max']
         max_coords = [max_coords[2], max_coords[0], max_coords[1]]
 
-        print('Min coords', min_coords)
-        print('Max coords', max_coords)
-
         # Convert coordinates using your function
         stage_min = self.bigstitcher_to_stage_position(*min_coords)
         stage_max = self.bigstitcher_to_stage_position(*max_coords)
@@ -688,7 +685,7 @@ class VolumePlanWidget(QMainWindow):
         """
         if type(value) is not list and len(value) != 2:
             raise ValueError
-        self.fov_dimensions = value
+        self._fov_dimensions = value
         self._on_change()
 
     @property

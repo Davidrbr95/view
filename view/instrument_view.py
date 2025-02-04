@@ -26,6 +26,7 @@ class InstrumentView(QWidget):
 
     snapshotTaken = Signal((np.ndarray, list))
     contrastChanged = Signal((np.ndarray, list))
+    activeCameraChanged = Signal(object)
 
     def __init__(self, instrument,
                  config_path: Path,
@@ -45,7 +46,7 @@ class InstrumentView(QWidget):
             logger.setLevel(log_level)
 
         # initialize camera name tracker
-        self.active_camera = None
+        self._active_camera = None
 
         # Eventual widget groups
         self.laser_widgets = {}
@@ -195,6 +196,8 @@ class InstrumentView(QWidget):
 
         visible = QComboBox()
         visible.currentTextChanged.connect(lambda text: self.hide_devices(text, device_type))
+        if device_type == 'camera':
+            visible.currentTextChanged.connect(self._on_selected_camera_changed)
         visible.addItems(device_widgets.keys())
         visible.setCurrentIndex(0)
         overlap_layout.addWidget(visible, 0, 0)
@@ -203,6 +206,20 @@ class InstrumentView(QWidget):
         overlap_widget.setLayout(overlap_layout)
 
         return overlap_widget
+
+    @property
+    def active_camera(self):
+        return self._active_camera
+
+    @active_camera.setter
+    def active_camera(self, camera):
+        if self._active_camera != camera:
+            self._active_camera = camera
+            # Emit the signal so that others know active_camera has changed
+            self.activeCameraChanged.emit(camera)
+            
+    def _on_selected_camera_changed(self, camera_name):
+        self.active_camera = camera_name
 
     def hide_devices(self, text: str, device_type: str) -> None:
         """
@@ -291,17 +308,7 @@ class InstrumentView(QWidget):
 
 
         stacked = self.stack_device_widgets('camera')
-        # TODO: get this value form the stack
-        self.active_camera = 'ODO_camera'
-
-        ## figure A WAY TO GET THE CAMERA NAME FROM THE STACKED WIDGET 
-        ## THEN ADD A  RECORD ACTIVE CAMERA HERE
         self.viewer.window.add_dock_widget(stacked, area='right', name='Cameras')
-
-    # def record_active_camera(self, camera_name: str) -> None:
-        
-    #     self.active_camera = camera_name
-    #     print('Current active camera', self.active_camera)
 
     def toggle_live_button(self, camera_name: str) -> None:
         """
