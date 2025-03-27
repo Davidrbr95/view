@@ -3,19 +3,22 @@ from qtpy.QtWidgets import QTabWidget, QTabBar, QWidget, QPushButton, \
 from view.widgets.miscellaneous_widgets.q_item_delegates import QSpinItemDelegate, QTextItemDelegate, QComboItemDelegate
 from view.widgets.miscellaneous_widgets.q_scrollable_line_edit import QScrollableLineEdit
 from view.widgets.base_device_widget import label_maker
+from view.widgets.acquisition_widgets.volume_plan_widget import VolumePlanWidget
 import numpy as np
 from qtpy.QtCore import Signal, Qt
 from inflection import singularize
 from math import isnan
 import pint
 import inspect
+import ast
+
 class ChannelPlanWidget(QTabWidget):
     """Widget defining parameters per tile per channel """
 
     channelAdded = Signal([str])
     channelChanged = Signal()
 
-    def __init__(self, instrument_view, channels: dict, properties: dict, unit: str = 'um'):
+    def __init__(self, instrument_view, volume_plan: VolumePlanWidget, channels: dict, properties: dict, unit: str = 'um'):
         """
         :param instrument_view: view associated with instrument
         :param channels: dictionary defining channels for instrument
@@ -26,6 +29,7 @@ class ChannelPlanWidget(QTabWidget):
         super().__init__()
         self.instrument_view = instrument_view
         self.possible_channels = channels
+        self.volume_plan = volume_plan
         self.channels = []
         self.properties = properties
         self.column_data_types = {'step size [um]': float, 'steps': int, 'prefix': str}
@@ -52,6 +56,8 @@ class ChannelPlanWidget(QTabWidget):
         self.channel_order.currentTextChanged.connect(lambda value: setattr(self, 'mode', value))
         
         self.instrument_view.activeCameraChanged.connect(self.on_active_camera_changed)
+        # self.volume_plan.valueChanged.connect(self.on_active_camera_changed)
+
         # initialize column dictionaries and column delgates
         self.initialize_tables(instrument_view)
 
@@ -77,23 +83,49 @@ class ChannelPlanWidget(QTabWidget):
         """Re-fill the step sizes from instrument_view config
         and recalc steps for every row in every channel.
         """
-        new_step_size = self.instrument_view.config['acquisition_view']['step_size_mm'][camera_name]
         for channel in self.channels:
             table = getattr(self, f'{channel}_table')
             table.blockSignals(True)
-            row_count = table.rowCount()
-            for row in range(row_count):
-                # Overwrite step_size array in memory
-                tile_index = [int(x) for x in table.item(row, table.columnCount() - 1).text() if x.isdigit()]
-                self.step_size[channel][tile_index[0], tile_index[1]] = new_step_size
-                table.item(row, 0).setData(Qt.EditRole, new_step_size)
-                # Recompute steps:
-                step_size, steps_ = self.update_steps(tile_index, row, channel)
-                table.item(row, 1).setData(Qt.EditRole, steps_)
-                table.item(row, 0).setData(Qt.EditRole, step_size)
+            self.remove_channel(channel)
+            self.add_channel(channel)
             table.blockSignals(False)
-
         self.channelChanged.emit()
+
+        # new_step_size = self.instrument_view.config['acquisition_view']['step_size_mm'][camera_name]
+        # tunable_lens = self.instrument_view.instrument.tunable_lens['kdc101']
+        # new_kdc = tunable_lens.position_mm_dictionary[camera_name.split('_')[0]]
+        # # new_kdc = self.instrument_view.config['acquisition_view']['kdc_position_mm']
+        # print(new_kdc)
+        # for channel in self.channels:
+        #     table = getattr(self, f'{channel}_table')
+        #     table.blockSignals(True)
+        #     row_count = table.rowCount()
+        #     for row in range(row_count):
+        #         # Overwrite step_size array in memory
+        #         tile_index = [int(x) for x in table.item(row, table.columnCount() - 1).text() if x.isdigit()]
+        #         self.step_size[channel][tile_index[0], tile_index[1]] = new_step_size
+        #         table.item(row, 0).setData(Qt.EditRole, new_step_size)
+
+        #         lens_col = None
+        #         for c in range(table.columnCount()):
+        #             hdr = table.horizontalHeaderItem(c).text()
+        #             if hdr == 'Kdc101 Position [mm]':  # or tunable_lens_position_mm
+        #                 lens_col = c
+        #                 break
+                
+
+        #         # Recompute steps:
+        #         step_size, steps_ = self.update_steps(tile_index, row, channel)
+        #         table.item(row, 1).setData(Qt.EditRole, steps_)
+        #         table.item(row, 0).setData(Qt.EditRole, step_size)
+        #         if lens_col is not None:
+        #             delegate = getattr(self, 'Kdc101 Position [mm]', None)
+        #             delegate[channel][tile_index[0], tile_index[1]] = new_kdc
+        #             if table.item(row, lens_col) is not None:
+        #                 table.item(row, lens_col).setData(Qt.EditRole, float(new_kdc))
+        #     table.blockSignals(False)
+
+        # self.channelChanged.emit()
 
     def initialize_tables(self, instrument_view) -> None:
         """
@@ -234,12 +266,15 @@ class ChannelPlanWidget(QTabWidget):
             self.prefix[channel] = np.resize(self.prefix[channel], value.shape)
             self._tile_volumes = value
             for row in range(table.rowCount()):
-                tile_index = [int(x) for x in table.item(row, table.columnCount() - 1).text() if x.isdigit()]
+                tile_index = self.parse_coordinates(table.item(row, table.columnCount()-1).text())
                 if tile_index[0] < value.shape[0] and tile_index[1] < value.shape[1]:
                     self.update_steps(tile_index, row, channel)
 
 
-
+    def parse_coordinates(self, s: str) -> list:
+        x, y = ast.literal_eval(s)
+        return [int(x), int(y)]
+    
     def enable_item(self, item: QTableWidgetItem, enable: bool) -> None:
         """
         Change flags for enabling/disabling items in channel_plan table
@@ -282,6 +317,18 @@ class ChannelPlanWidget(QTabWidget):
         self.step_size[channel] = np.zeros(self._tile_volumes.shape, dtype=float)
         self.prefix[channel] = np.zeros(self._tile_volumes.shape, dtype='U100')
         self.step_size[channel][:, :] = self.instrument_view.config['acquisition_view']['step_size_mm'][self.instrument_view.active_camera]
+
+        if hasattr(self, 'Kdc101 Position [mm]'):
+            delegate = getattr(self, 'Kdc101 Position [mm]', None)
+            if channel not in delegate:
+                delegate[channel] = np.zeros(self._tile_volumes.shape)
+            tunable_lens = self.instrument_view.instrument.tunable_lens['kdc101']
+            default_kdc = tunable_lens.position_mm_dictionary[self.instrument_view.active_camera.split('_')[0]]
+       
+            # default_kdc = self.instrument_view.config['acquisition_view']['kdc_position_mm'][
+            #     self.instrument_view.active_camera
+            # ]
+            delegate[channel][:, :] = default_kdc
 
         self.insertTab(0, table, channel)
         self.setCurrentIndex(0)
@@ -416,7 +463,7 @@ class ChannelPlanWidget(QTabWidget):
         :param channel: name of channel
         :return: step_size in um and number of steps
         """
-
+        # print(tile_index)
         volume_um = (self.tile_volumes[*tile_index]*self.unit).to(self.micron)
         index = tile_index if not self.apply_all else [slice(None), slice(None)]
         steps = volume_um / (float(getattr(self, f'{channel}_table').item(row, 0).data(Qt.EditRole))*self.micron)

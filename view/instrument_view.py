@@ -19,6 +19,7 @@ import inspect
 from view.widgets.miscellaneous_widgets.q_scrollable_line_edit import QScrollableLineEdit
 from view.widgets.miscellaneous_widgets.q_scrollable_float_slider import QScrollableFloatSlider
 import numpy as np
+from pprint import pprint
 from typing import Literal, Union, Iterator
 
 class InstrumentView(QWidget):
@@ -47,6 +48,7 @@ class InstrumentView(QWidget):
 
         # initialize camera name tracker
         self._active_camera = None
+        self._daq_combo_box  = None 
 
         # Eventual widget groups
         self.laser_widgets = {}
@@ -68,24 +70,25 @@ class InstrumentView(QWidget):
 
         self.instrument = instrument
         self.config_path = config_path
+        # print('CONFIG PATH', config_path)
         self.config = YAML().load(config_path)
+        # print(self.config['instrument_view']['livestream_tasks']['NODO-pcie-6738']['tasks']['co_task'])
 
         # Convenient config maps
         self.channels = self.instrument.config['instrument']['channels']
 
+
         # Setup napari window
         self.viewer = napari.Viewer(title='View', ndisplay=2, axis_labels=('x', 'y'))
 
-        # setup daq with livestreaming tasks
-        self.setup_daqs()
-
         # Set up instrument widgets
         for device_name, device_specs in self.instrument.config['instrument']['devices'].items():
-            print(device_name, device_specs)
             self.create_device_widgets(device_name, device_specs)
 
         # setup widget additional functionalities
         self.setup_camera_widgets()
+        # setup daq with livestreaming tasks
+        self.setup_daqs()
         self.setup_channel_widget()
         self.setup_laser_widgets()
         self.setup_daq_widgets()
@@ -105,14 +108,18 @@ class InstrumentView(QWidget):
         """
         Initialize daqs with livestreaming tasks if different from data acquisition tasks
         """
+        # print('Inside setup daqs')
+        # print(self.config['instrument_view']['livestream_tasks']['NODO-pcie-6738']['tasks']['co_task'])
 
         for daq_name, daq in self.instrument.daqs.items():
+            # if daq_name.split('-')[0] == self.active_camera.split('_')[0]:
             if daq_name in self.config['instrument_view'].get('livestream_tasks', {}).keys():
+                # print('Within loop', daq_name)
                 daq.tasks = self.config['instrument_view']['livestream_tasks'][daq_name]['tasks']
                 # Make sure if there is a livestreaming task, there is a corresponding data acquisition task:
                 if not self.config['acquisition_view'].get('data_acquisition_tasks', {}).get(daq_name, False):
                     self.log.error(f'Daq {daq_name} has a livestreaming task but no corresponding data acquisition '
-                                   f'task in instrument yaml.')
+                                f'task in instrument yaml.')
                     raise ValueError
 
     def setup_stage_widgets(self) -> None:
@@ -167,15 +174,16 @@ class InstrumentView(QWidget):
         """
 
         for daq_name, daq_widget in self.daq_widgets.items():
-
+            print("Setup daq widgets", daq_name)
             # if daq_widget is BaseDeviceWidget or inherits from it, update waveforms when gui is changed
             if type(daq_widget) == BaseDeviceWidget or BaseDeviceWidget in type(daq_widget).__bases__:
                 daq_widget.ValueChangedInside[str].connect(
                     lambda value, daq=self.instrument.daqs[daq_name]: self.write_waveforms(daq))
                 # update tasks if livestreaming task is different from data acquisition task
-                if daq_name in self.config['instrument_view'].get('livestream_tasks', {}).keys():
-                    daq_widget.ValueChangedInside[str].connect(lambda attr, widget=daq_widget, name=daq_name:
-                                                               self.update_config_waveforms(widget, daq_name, attr))
+            if daq_name in self.config['instrument_view'].get('livestream_tasks', {}).keys():
+                print("We are selcting ", daq_name)
+                daq_widget.ValueChangedInside[str].connect(lambda attr, widget=daq_widget, daq_name=daq_name:
+                                                            self.update_config_waveforms(widget, daq_name, attr))
 
         stacked = self.stack_device_widgets('daq')
         self.viewer.window.add_dock_widget(stacked, area='right', name='DAQs')
@@ -198,6 +206,9 @@ class InstrumentView(QWidget):
         visible.currentTextChanged.connect(lambda text: self.hide_devices(text, device_type))
         if device_type == 'camera':
             visible.currentTextChanged.connect(self._on_selected_camera_changed)
+        if device_type == 'daq':
+            self._daq_combo_box = visible   # <--- Store reference in an instance attribute
+            
         visible.addItems(device_widgets.keys())
         visible.setCurrentIndex(0)
         overlap_layout.addWidget(visible, 0, 0)
@@ -220,6 +231,45 @@ class InstrumentView(QWidget):
             
     def _on_selected_camera_changed(self, camera_name):
         self.active_camera = camera_name
+        prefix = camera_name.split('_')[0]
+        for daq_name in self.daq_widgets.keys():
+            if daq_name.startswith(prefix) and self._daq_combo_box is not None:
+                self._daq_combo_box.setCurrentText(daq_name)
+                break
+        
+        ### Change tunable lens
+        tunable_lens = self.instrument.tunable_lens['kdc101']
+        tunable_lens.position_mm = tunable_lens.position_mm_dictionary[prefix]
+
+        ### Change daq
+        # Clear all tasks from daqs
+        # for daq_name, daq in self.instrument.daqs.items():
+        #     # if daq_name.split('-')[0] != camera_name.split('_')[0]:
+        #     for i in ['ao', 'co', 'do']:
+        #         if old_task := getattr(daq, f"{i}_task", False):
+        #             print("Deleting...........", old_task, " for ", camera_name)
+        #             old_task.close()  # close old task
+        #             delattr(daq, f"{i}_task")  # Delete previously configured tasks
+
+        # for daq_name, daq in self.instrument.daqs.items():
+        #     if daq_name.split('-')[0] == camera_name.split('_')[0]:
+        #         print('Check which daq task is being added, ', daq_name.split('-')[0])
+        #         if daq.tasks.get('ao_task', None) is not None:
+        #             print('write ao')
+        #             daq.add_task('ao')
+        #             daq.generate_waveforms('ao', self.livestream_channel)
+        #             daq.write_ao_waveforms()
+        #         if daq.tasks.get('do_task', None) is not None:
+        #             print('write do')
+        #             daq.add_task('do')
+        #             daq.generate_waveforms('do', self.livestream_channel)
+        #             daq.write_do_waveforms()
+        #         if daq.tasks.get('co_task', None) is not None:
+        #             print('write co')
+        #             pulse_count = daq.tasks['co_task']['timing'].get('pulse_count', None)
+        #             daq.add_task('co', pulse_count)
+
+        
 
     def hide_devices(self, text: str, device_type: str) -> None:
         """
@@ -261,11 +311,24 @@ class InstrumentView(QWidget):
         value = getattr(daq_widget, attr_name)
         self.log.debug(f'{daq_name} {attr_name} changed to {getattr(daq_widget, path[0])}')
 
+
+        ## important!!!!
         # update livestream_task
-        self.config['instrument_view']['livestream_tasks'][daq_name]['tasks'] = daq_widget.tasks
+        print("We are updating ", daq_name, "in the livestream_tasks")
+        print(self.config['instrument_view']['livestream_tasks'][daq_name]['tasks'])
+        # self.config['instrument_view']['livestream_tasks'][daq_name]['tasks'] = daq_widget.tasks
+        # print("Important", daq_widget.tasks)
 
         # update data_acquisition_tasks if value correlates
         key = path[-1]
+        print("Here is the key", key)
+
+        dictionary = pathGet(self.config['instrument_view']['livestream_tasks'][daq_name], path[:-1])
+        print("Dic: ", dictionary)
+        if key not in dictionary.keys():
+            raise KeyError
+        dictionary[key] = value
+        print(self.config['instrument_view']['livestream_tasks'][daq_name]['tasks'])
         
         try:
             dictionary = pathGet(self.config['acquisition_view']['data_acquisition_tasks'][daq_name], path[:-1])
@@ -274,6 +337,9 @@ class InstrumentView(QWidget):
             dictionary[key] = value
             self.log.debug(f"Data acquisition tasks parameters updated to "
                            f"{self.config['acquisition_view']['data_acquisition_tasks'][daq_name]}")
+            # print(daq_name)
+            # print(f"Data acquisition tasks parameters updated to "
+            #                f"{self.config['acquisition_view']['data_acquisition_tasks'][daq_name]}")
 
         except KeyError:
             self.log.warning(f"Path {attr_name} can't be mapped into data acquisition tasks so changes will not "
@@ -309,6 +375,9 @@ class InstrumentView(QWidget):
 
         stacked = self.stack_device_widgets('camera')
         self.viewer.window.add_dock_widget(stacked, area='right', name='Cameras')
+        first_camera = next(iter(self.camera_widgets), None)
+        if first_camera:
+            self.active_camera = first_camera
 
     def toggle_live_button(self, camera_name: str) -> None:
         """
@@ -340,6 +409,7 @@ class InstrumentView(QWidget):
         :param frames: how many frames to take
         """
 
+        self.setup_daqs()
         if self.grab_frames_worker.is_running:
             if frames == 1:  # create snapshot layer with the latest image
                 # TODO: Maybe make this it's own function
@@ -372,20 +442,36 @@ class InstrumentView(QWidget):
         for filter in self.channels[self.livestream_channel].get('filters', []):
             self.instrument.filters[filter].enable()
 
+        # Clear all tasks from daqs
         for daq_name, daq in self.instrument.daqs.items():
-            if daq.tasks.get('ao_task', None) is not None:
-                daq.add_task('ao')
-                daq.generate_waveforms('ao', self.livestream_channel)
-                daq.write_ao_waveforms()
-            if daq.tasks.get('do_task', None) is not None:
-                daq.add_task('do')
-                daq.generate_waveforms('do', self.livestream_channel)
-                daq.write_do_waveforms()
-            if daq.tasks.get('co_task', None) is not None:
-                pulse_count = daq.tasks['co_task']['timing'].get('pulse_count', None)
-                daq.add_task('co', pulse_count)
+            # if daq_name.split('-')[0] != self.active_camera.split('_')[0]:
+            # print('Name : ', daq_name)
+            # pprint(vars(daq))
+            for i in ['ao', 'co', 'do']:
+                if old_task := getattr(daq, f"{i}_task", False):
+                    print("Deleting...........", old_task, " for ", self.active_camera)
+                    old_task.close()  # close old task
+                    delattr(daq, f"{i}_task")  # Delete previously configured tasks
 
-            daq.start()
+        for daq_name, daq in self.instrument.daqs.items():
+            if daq_name.split('-')[0] == self.active_camera.split('_')[0]:
+                print("Here", daq.tasks)
+                # print('Check which daq task is being added, ', daq_name.split('-')[0])
+                if daq.tasks.get('ao_task', None) is not None:
+                    print('write ao')
+                    daq.add_task('ao')
+                    daq.generate_waveforms('ao', self.livestream_channel)
+                    daq.write_ao_waveforms()
+                if daq.tasks.get('do_task', None) is not None:
+                    print('write do')
+                    daq.add_task('do')
+                    daq.generate_waveforms('do', self.livestream_channel)
+                    daq.write_do_waveforms()
+                if daq.tasks.get('co_task', None) is not None:
+                    print('write co')
+                    pulse_count = daq.tasks['co_task']['timing'].get('pulse_count', None)
+                    daq.add_task('co', pulse_count)
+                daq.start()
 
     def dismantle_live(self, camera_name: str) -> None:
         """
@@ -395,8 +481,14 @@ class InstrumentView(QWidget):
 
         self.instrument.cameras[camera_name].abort()
         for daq_name, daq in self.instrument.daqs.items():
-            daq.stop()
-            daq.write_zeros()
+            if daq_name.split('-')[0] == self.active_camera.split('_')[0]:
+                daq.stop()
+                daq.write_zeros()
+                for i in ['ao', 'co', 'do']:
+                    if old_task := getattr(daq, f"{i}_task", False):
+                        print("Dismantel live - Deleting...........", old_task, " for ", self.active_camera)
+                        old_task.close()  # close old task
+                        delattr(daq, f"{i}_task")  # Delete previously configured tasks
 
         for laser_name in self.channels[self.livestream_channel].get('lasers', []):
             self.instrument.lasers[laser_name].disable()
@@ -501,8 +593,9 @@ class InstrumentView(QWidget):
             if self.grab_frames_worker.is_running:  # livestreaming is going
                 for old_laser_name in self.channels[self.livestream_channel].get('lasers', []):
                     self.instrument.lasers[old_laser_name].disable()
-                for daq in self.instrument.daqs.values():
-                    self.write_waveforms(daq)
+                for daq_name, daq in self.instrument.daqs.items():
+                    if daq_name.split('-')[0] == self.active_camera.split('_')[0]:
+                        self.write_waveforms(daq)
                 for new_laser_name in self.channels[channel].get('lasers', []):
                     self.instrument.lasers[new_laser_name].enable()
             self.livestream_channel = channel
@@ -639,6 +732,19 @@ class InstrumentView(QWidget):
                 widgets.extend(dictionary.values())
         for widget in widgets:
             if widget not in self.viewer.window._qt_window.findChildren(type(widget)):
+                # print("This is", widget.windowTitle())
+                # if widget.windowTitle() == "tunable_lens kdc101":
+                #     # print("Nice found it!")
+                #     self.etl_widget = widget
+                #     # print(self.etl_widget.property_widgets.items())
+                #     # t_w = self.etl_widget.property_widgets.get('position_mm')
+                #     # print(type(t_w))
+                #     # cuurent = getattr(self.etl_widget, 'position_mm')
+                #     # print(cuurent)
+                #     # device = getattr(self.instrument, "tunable_lens")["kdc101"]
+                #     # print(device)
+
+
                 undocked_widget = self.viewer.window.add_dock_widget(widget, name=widget.windowTitle())
                 undocked_widget.setFloating(True)
                 # hide widget if empty property widgets

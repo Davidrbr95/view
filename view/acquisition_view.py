@@ -182,10 +182,16 @@ class AcquisitionView(QWidget):
         if self.instrument_view.grab_frames_worker.is_running:  # stop livestream if running
             self.instrument_view.grab_frames_worker.quit()
 
+        # for worker in self.instrument_view.property_workers:
+        #     worker.pause()
+
         # write correct daq values if different from livestream
         for daq_name, daq in self.instrument.daqs.items():
-            if daq_name in self.config['acquisition_view'].get('data_acquisition_tasks', {}).keys():
-                daq.tasks = self.config['acquisition_view']['data_acquisition_tasks'][daq_name]['tasks']
+            if daq_name.split('-')[0] == self.active_camera.split('_')[0]:
+                if daq_name in self.config['acquisition_view'].get('data_acquisition_tasks', {}).keys():
+                    daq.tasks = self.config['acquisition_view']['data_acquisition_tasks'][daq_name]['tasks']
+                    print('WE START ACQUSITION WHAT ARE THE TASKS')
+                    print(daq.tasks)
                 # Tasks should be added and written in acquisition?
 
         # anchor grid in volume widget
@@ -202,6 +208,7 @@ class AcquisitionView(QWidget):
             if hasattr(self, f'{operation}_dock'):
                 getattr(self, f'{operation}_dock').setDisabled(True)
         self.stop_button.setEnabled(True)
+        
         # disable instrument view
         self.instrument_view.setDisabled(True)
 
@@ -228,7 +235,9 @@ class AcquisitionView(QWidget):
             if hasattr(self, f'{operation}_dock'):
                 getattr(self, f'{operation}_dock').setDisabled(False)
         self.stop_button.setEnabled(False)
-
+        
+        # Clear the break
+        self.acquisition.stop_engine.clear()
         # unanchor grid in volume widget
         # anchor grid in volume widget
         for anchor, widget in zip(self.volume_plan.anchor_widgets, self.volume_plan.grid_offset_widgets):
@@ -245,6 +254,12 @@ class AcquisitionView(QWidget):
 
         for worker in self.property_workers:
             worker.pause()
+
+        # for worker in self.instrument_view.property_workers:
+        #     worker.resume()
+
+        # print('Trying to resetup the live view')
+        self.instrument_view.setup_daqs()
 
     def stack_device_widgets(self, device_type: str) -> QWidget:
         """
@@ -351,6 +366,7 @@ class AcquisitionView(QWidget):
 
         # create channel plan
         self.channel_plan = ChannelPlanWidget(instrument_view=self.instrument_view,
+                                              volume_plan=self.volume_plan,
                                               channels=self.instrument.config['instrument']['channels'],
                                               unit=self.unit,
                                               **self.config['acquisition_view']['acquisition_widgets'].get(
@@ -469,6 +485,20 @@ class AcquisitionView(QWidget):
         self.grab_fov_positions_worker.yielded.connect(lambda pos: setattr(self.volume_plan, 'fov_position', pos))
         self.grab_fov_positions_worker.yielded.connect(lambda pos: setattr(self.volume_model, 'fov_position', pos))
         self.grab_fov_positions_worker.start()
+
+        # self.grab_xz_positions_worker = self.grab_xz_positions()
+        # self.grab_xz_positions_worker.yielded.connect(lambda pos: self.write_position(pos))
+        # self.grab_xz_positions_worker.start()
+
+    def write_position(self, pos):
+        print('Write_position', pos)
+
+    @thread_worker
+    def grab_xz_positions(self) -> Iterator[list[float, float]]:
+        for name, stage in {**self.instrument.tiling_stages, **self.instrument.scanning_stages}.items():
+            print('STAGE',name, stage)
+            pos = stage.ms2000.get_xz_position_mm()
+            yield pos
 
     @thread_worker
     def grab_fov_positions(self) -> Iterator[list[float, float, float]]:
