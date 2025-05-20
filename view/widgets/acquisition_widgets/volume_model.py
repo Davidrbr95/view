@@ -93,9 +93,10 @@ class VolumeModel(GLOrthoViewWidget):
         self.unit = unit
         self.coordinate_plane = [x.replace('-', '') for x in coordinate_plane] if coordinate_plane else ['x', 'y', 'z']
         self.polarity = [1 if '-' not in x else -1 for x in coordinate_plane]
-        self.fov_dimensions = fov_dimensions[:2]+[0] if fov_dimensions else [1.0, 1.0, 0]    # add 0 in the scanning dim
+        self.fov_dimensions = fov_dimensions#fov_dimensions[:2]+[0] if fov_dimensions else [1.0, 1.0, 0]    # add 0 in the scanning dim
         self.fov_position = fov_position if fov_position else [0.0, 0.0, 0.0]
         self.view_plane = (self.coordinate_plane[0], self.coordinate_plane[1])  # plane currently being viewed
+        # self.view_plane = ('x', 'y')
 
         self.scan_volumes = np.zeros([1, 1])  # 2d list detailing volume of tiles
         self.grid_coords = np.zeros([1, 1, 3])  # 2d list detailing start position of tiles
@@ -171,13 +172,14 @@ class VolumeModel(GLOrthoViewWidget):
         layout.addWidget(QLabel('Plane View: '), 0, 1)
         view_plane = QButtonGroup()
         for i, view in enumerate([f'({self.coordinate_plane[0]}, {self.coordinate_plane[2]})',
-                                  f'({self.coordinate_plane[2]}, {self.coordinate_plane[1]})',
-                                  f'({self.coordinate_plane[0]}, {self.coordinate_plane[1]})']):
+                                  f'({self.coordinate_plane[0]}, {self.coordinate_plane[1]})',
+                                  f'({self.coordinate_plane[2]}, {self.coordinate_plane[1]})']):
             button = QRadioButton(view)
             button.clicked.connect(lambda clicked, b=button: self.toggle_view_plane(b))
             view_plane.addButton(button)
             button.setChecked(True)
             layout.addWidget(button, 0, i + 2)
+            self.toggle_view_plane(button)
 
         halt = QPushButton('HALT STAGE')
         halt.pressed.connect(self.fovHalt.emit)
@@ -186,6 +188,11 @@ class VolumeModel(GLOrthoViewWidget):
         self.widgets.setLayout(layout)
         self.widgets.setMaximumHeight(70)
         self.widgets.show()
+        # print('SETTING UP AN IMAGE VIEW')
+        # image = np.ones((17600, 2048))
+        # self.add_fov_image_2(image)
+        # print('DONE SETTING UP AN IMAGE VIEW')
+        # self.add_fov_image_2()
 
     def update_model(self, attribute_name) -> None:
         """Update attributes of grid
@@ -282,7 +289,7 @@ class VolumeModel(GLOrthoViewWidget):
 
         image_rgba = makeRGBA(image, levels=levels)
         image_rgba[0][:, :, 3] = 200
-
+        print('image_rgba', image_rgba[0].shape)
         gl_image = GLImageItem(image_rgba[0],
                                glOptions='additive')
         x, y, z = self.fov_position
@@ -295,6 +302,7 @@ class VolumeModel(GLOrthoViewWidget):
 
         if self.view_plane != (self.coordinate_plane[0], self.coordinate_plane[1]):
             gl_image.setVisible(False)
+
 
     def adjust_glimage_contrast(self, image: np.ndarray, contrast_levels: list[float]) -> None:
         """
@@ -318,6 +326,10 @@ class VolumeModel(GLOrthoViewWidget):
 
     def _update_opts(self) -> None:
         """Update view of widget. Note that x/y notation refers to horizontal/vertical dimensions of grid view"""
+
+        # print("coordinate_plane:", self.coordinate_plane)
+        # print("grid_coords shape:", self.grid_coords.shape)
+        # print("fov_dimensions:", self.fov_dimensions)
 
         view_plane = self.view_plane
         view_pol = [self.polarity[self.coordinate_plane.index(view_plane[0])],

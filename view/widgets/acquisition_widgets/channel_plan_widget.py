@@ -79,6 +79,9 @@ class ChannelPlanWidget(QTabWidget):
                                       setattr(self, 'channels', [self.tabText(ch) for ch in range(self.count() - 1)]))
         self._apply_all = True  # external flag to dictate behaviour of added tab
 
+        for ch in self.possible_channels.keys():
+            self.add_channel(ch)
+
     def on_active_camera_changed(self, camera_name: str):
         """Re-fill the step sizes from instrument_view config
         and recalc steps for every row in every channel.

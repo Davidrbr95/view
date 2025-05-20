@@ -54,11 +54,13 @@ class InstrumentView(QWidget):
         self.laser_widgets = {}
         self.daq_widgets = {}
         self.camera_widgets = {}
+        self.stacked_camera  = None
         self.scanning_stage_widgets = {}
         self.tiling_stage_widgets = {}
         self.focusing_stage_widgets = {}
         self.filter_wheel_widgets = {}
         self.joystick_widgets = {}
+        self.current_coordinate_system = None
 
         # Eventual threads
         self.grab_frames_worker = create_worker(lambda: None)  # dummy thread
@@ -203,8 +205,10 @@ class InstrumentView(QWidget):
             overlap_layout.addWidget(widget, 2, 0)
 
         visible = QComboBox()
+        visible.setObjectName("CameraSelection")
         visible.currentTextChanged.connect(lambda text: self.hide_devices(text, device_type))
         if device_type == 'camera':
+            self.stacked_camera = visible
             visible.currentTextChanged.connect(self._on_selected_camera_changed)
         if device_type == 'daq':
             self._daq_combo_box = visible   # <--- Store reference in an instance attribute
