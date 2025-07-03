@@ -273,8 +273,6 @@ class InstrumentView(QWidget):
         #             pulse_count = daq.tasks['co_task']['timing'].get('pulse_count', None)
         #             daq.add_task('co', pulse_count)
 
-        
-
     def hide_devices(self, text: str, device_type: str) -> None:
         """
         Hide device widget if not selected in combo box

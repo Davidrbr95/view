@@ -28,6 +28,10 @@ from qtpy.QtWidgets import (
 )
 from typing import Literal, Union, Generator
 from qtpy.QtCore import Signal
+import json
+from qtpy.QtWidgets import QFileDialog
+import csv
+from qtpy.QtWidgets import QFileDialog
 
 class GridFromEdges(useq.GridFromEdges):
     """Subclassing useq.GridFromEdges to add row and column attributes and allow reversible order"""
@@ -117,17 +121,28 @@ class VolumePlanWidget_ST(QMainWindow):
     valueChanged = Signal(object)
     coordinateChangeODO2ProfilerRequested = Signal()
     coordinateChangeProfiler2ODORequested = Signal()
+    coordinateChangeODO2NODORequested = Signal()
+    coordinateChangeNODO2ODORequested = Signal()
+    coordinateChangeProfiler2NODORequested = Signal()
+    coordinateChangeNODO2ProfilerRequested = Signal()
     request_heightmaps_display = Signal()
     coordinateSystemChanged = Signal(str)
     request_boundary_calculation = Signal(float, int)
     enable_filter_changed = Signal(bool)
     enable_thresholding = Signal(bool)
     enable_surface_tracking = Signal(bool)
-    surfaceTrackingPathGenerated = Signal(str, float, float)
-    feedforwardpathRequested = Signal()
-    pathdisplayRequested = Signal()
+    enable_sync_tracking = Signal(bool)
+    surfaceTrackingPathGenerated = Signal(str, str)
+    feedforwardpathRequested = Signal(str)
+    pathdisplayRequested = Signal(str)
+    livetrackingRequested = Signal(bool)
+    strideChanged = Signal(int)
+    offsetChanged = Signal(float)
+    loadBoundingBoxesRequested = Signal()
 
     def __init__(self,
+                 acquisition_view,
+                 instrument_view,
                  limits: list[[float, float], [float, float], [float, float]] = None,
                  fov_dimensions: list[float, float, float] = None,
                  fov_position: list[float, float, float] = None,
@@ -145,7 +160,10 @@ class VolumePlanWidget_ST(QMainWindow):
         :param unit: common unit of all arguments. Defaults to um
         """
         super().__init__()
-
+        self.instrument_view = instrument_view
+        self.acquisition_view = acquisition_view
+        self.acquisition_view.initialBoundaryReferenceChanged.connect(self._update_initial_reference)
+        self.current_initial_reference = None  # or default to (0.0, 0.0)
         layout = QVBoxLayout()
         self.button_group = QButtonGroup()
         self.button_group.setExclusive(True)
@@ -165,50 +183,61 @@ class VolumePlanWidget_ST(QMainWindow):
         self._scan_ends = np.zeros([1, 1], dtype=float)
         self.start = None   # tile to start at. If none, then default is first tile
         self.stop = None    # tile to end at. If none, then default is last tile
-
-
+        self.serpentine_scan = False
 
         # ---------------------------
         # Set Coordinate Group
         # ---------------------------
         # Create a group box to hold coordinate status + buttons
         coord_group = QGroupBox("Setup Coordinate System")
-        # coord_group.setStyleSheet("QGroupBox { border: 1px dashed gray; margin-top: 10px; padding: 5px; }")
         coord_group.setStyleSheet("""
-                    QGroupBox { border: 1px dashed gray; margin-top: 10px; padding: 5px; }
-                    QGroupBox::title {
-                        subcontrol-origin: margin;
-                        subcontrol-position: top left;
-                        padding: 0 3px;
-                    }
-                    """)
+            QGroupBox { border: 1px dashed gray; margin-top: 10px; padding: 5px; }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+            }
+        """)
 
-        coord_layout = QVBoxLayout()
+        coord_layout = QGridLayout()
         self.current_coordinate_system = "Unknown"
         self.coordinate_status_label = QLabel(f"Current Coordinate: {self.current_coordinate_system}")
         self.coordinate_status_label.setStyleSheet("font-weight: bold; color: navy;")
-        coord_layout.addWidget(self.coordinate_status_label)
+        coord_layout.addWidget(self.coordinate_status_label, 0, 0, 1, 3)  # Span label across 3 columns
 
+        # Connect signal
         self.coordinateSystemChanged.connect(self.update_coordinate_status)
 
-        self.coordinate_change_ODO_2_Profiler_button = QPushButton("Coordinate change - ODO to Profiler")
-        self.coordinate_change_Profiler_2_ODO_button = QPushButton("Coordinate change - Profiler to ODO")
-        self.coordinate_change_ODO_2_Profiler_button.clicked.connect(self.coordinateChangeODO2ProfilerRequested.emit)
-        self.coordinate_change_Profiler_2_ODO_button.clicked.connect(self.coordinateChangeProfiler2ODORequested.emit)
+        # Create buttons
+        self.btn_profiler_to_odo = QPushButton("Profiler to Low Res")
+        self.btn_odo_to_profiler = QPushButton("Low Res to Profiler")
+        self.btn_odo_to_nodo = QPushButton("Low Res to High Res")
+        self.btn_nodo_to_odo = QPushButton("High Res to Low Res")
+        self.btn_profiler_to_nodo = QPushButton("Profiler to High Res")
+        self.btn_nodo_to_profiler = QPushButton("High Res to Profiler")
 
-        coord_layout.addWidget(self.coordinate_change_ODO_2_Profiler_button)
-        coord_layout.addWidget(self.coordinate_change_Profiler_2_ODO_button)
+        # Connect buttons to signals
+        self.btn_profiler_to_odo.clicked.connect(self.coordinateChangeProfiler2ODORequested.emit)
+        self.btn_odo_to_profiler.clicked.connect(self.coordinateChangeODO2ProfilerRequested.emit)
+        self.btn_odo_to_nodo.clicked.connect(self.coordinateChangeODO2NODORequested.emit)
+        self.btn_nodo_to_odo.clicked.connect(self.coordinateChangeNODO2ODORequested.emit)
+        self.btn_profiler_to_nodo.clicked.connect(self.coordinateChangeProfiler2NODORequested.emit)
+        self.btn_nodo_to_profiler.clicked.connect(self.coordinateChangeNODO2ProfilerRequested.emit)
+
+        # Add buttons to layout (2 rows × 3 columns)
+        coord_layout.addWidget(self.btn_profiler_to_odo,      1, 0)
+        coord_layout.addWidget(self.btn_odo_to_profiler,      2, 0)
+        coord_layout.addWidget(self.btn_odo_to_nodo,          1, 1)
+        coord_layout.addWidget(self.btn_nodo_to_odo,          2, 1)
+        coord_layout.addWidget(self.btn_profiler_to_nodo,     1, 2)
+        coord_layout.addWidget(self.btn_nodo_to_profiler,     2, 2)
 
         coord_group.setLayout(coord_layout)
-
-        # Add the group box to the main layout
         layout.addWidget(coord_group)
-
 
         # ---------------------------
         # Set Scan Bounds Group
         # ---------------------------
-
         for i in range(2):
             low = QDoubleSpinBox()
             low.setSizePolicy(QSizePolicy.Policy(7), QSizePolicy.Policy(0))
@@ -290,7 +319,7 @@ class VolumePlanWidget_ST(QMainWindow):
         # ---------------------------
         self.overlap = QDoubleSpinBox()
         self.overlap.setRange(-100, 100)
-        self.overlap.setValue(10)
+        self.overlap.setValue(0)
         self.overlap.setSuffix(" %")
         overlap_widget = create_widget('H', QLabel('Overlap: '), self.overlap)
         overlap_widget.layout().setAlignment(Qt.AlignLeft)
@@ -423,91 +452,65 @@ class VolumePlanWidget_ST(QMainWindow):
 
         self.surface_tracking_group = QGroupBox("Setup OTLS-ODO Surface Tracking")
         self.surface_tracking_group.setStyleSheet("""
-                            QGroupBox { border: 1px dashed gray; margin-top: 10px; padding: 5px; }
-                            QGroupBox::title {
-                                subcontrol-origin: margin;
-                                subcontrol-position: top left;
-                                padding: 0 3px;
-                            }
-                            """)
+                                QGroupBox { border: 1px dashed gray; margin-top: 10px; padding: 5px; }
+                                QGroupBox::title {
+                                    subcontrol-origin: margin;
+                                    subcontrol-position: top left;
+                                    padding: 0 3px;
+                                }
+                                """)
 
         # Checkbox
         self.enable_surface_tracking_checkbox = QCheckBox("Enable surface tracking")
         self.enable_surface_tracking_checkbox.setChecked(False)
         self.enable_surface_tracking_checkbox.stateChanged.connect(self.surface_tracking)
 
-        # Z speed spinbox + label
-        self.z_speed_label = QLabel("Z speed (mm/s):")
-        self.set_z_speed = QDoubleSpinBox()
-        self.set_z_speed.setRange(0.0, 1.75)
-        self.set_z_speed.setSingleStep(0.05)
-        self.set_z_speed.setDecimals(2)
-        self.set_z_speed.setValue(1.75)
-        self.set_z_speed.setEnabled(True)
+        self.enable_sync_tracking_checkbox = QCheckBox("Enable sync calculation")
+        self.enable_sync_tracking_checkbox.setChecked(False)
+        self.enable_sync_tracking_checkbox.stateChanged.connect(self.sync_tracking)
 
         # Surface tracking model selector
         self.surface_tracking_model_combo = QComboBox()
-        self.surface_tracking_model_combo.addItems([ "A* test", "A*", "D*"])
-        self.surface_tracking_model_combo.setEnabled(True)
+        self.surface_tracking_model_combo.addItems(["A* test", "A*", "A* sync", "D*"])
 
-        # Pixel sampling input + label
-        self.grid_density_label = QLabel("Mesh density (µm):")
-        self.grid_density_spinbox = QSpinBox()
-        self.grid_density_spinbox.setRange(1, 100000)
-        self.grid_density_spinbox.setSingleStep(10)
-        self.grid_density_spinbox.setValue(1000)
-        self.grid_density_spinbox.setEnabled(True)
-
-        desired_width = 200
-        self.set_z_speed.setFixedWidth(desired_width)
-        self.grid_density_spinbox.setFixedWidth(desired_width)
+        # Model Parameters dropdown (ComboBox)
+        # self.model_parameters_label = QLabel("Model Parameters:")
+        self.model_parameters_combo = QComboBox()
+        self.model_parameters_combo.addItems(["astar-32px-coarsespacing-50Hz", "astar-32px-finespacing-50Hz", "astar-32px-finespacing", "astar-32px-coarsespacing", "astar-128px", "astar-128px-live"])
 
         # Generate path button
         self.generate_surface_path_button = QPushButton("Generate Surface Tracking Path")
-        self.generate_surface_path_button.setEnabled(True)
         self.generate_surface_path_button.clicked.connect(self.generate_surface_tracking_path)
 
         self.generate_feedforward_path_button = QPushButton("Generate Feedforward Path")
-        self.generate_feedforward_path_button.setEnabled(True)
         self.generate_feedforward_path_button.clicked.connect(self.generate_feedforward_path)
 
         self.display_path_button = QPushButton("Display Path")
-        self.display_path_button.setEnabled(True)
         self.display_path_button.clicked.connect(self.generate_path_display)
 
         # Layouts
         surface_tracking_layout = QVBoxLayout()
 
-        # Row 1 → checkbox + z speed
+        # Row 1 → both checkboxes on the same row
         row1_layout = QHBoxLayout()
         row1_layout.setSpacing(5)
         row1_layout.addWidget(self.enable_surface_tracking_checkbox)
-
-        z_speed_layout = QHBoxLayout()
-        z_speed_layout.setSpacing(3)
-        z_speed_layout.addWidget(self.z_speed_label)
-        z_speed_layout.addWidget(self.set_z_speed)
-        row1_layout.addLayout(z_speed_layout)
-
+        row1_layout.addWidget(self.enable_sync_tracking_checkbox)
         surface_tracking_layout.addLayout(row1_layout)
 
-        # Row 2 → model selector + pixel sampling
+        # Row 2 → both dropdowns on the next row
         row2_layout = QHBoxLayout()
-        # row2_layout.setSpacing(3)
+        row2_layout.setSpacing(5)
         row2_layout.addWidget(self.surface_tracking_model_combo)
-        row2_layout.addSpacerItem(QSpacerItem(160, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
-        row2_layout.addWidget(self.grid_density_label)
-        row2_layout.addSpacerItem(QSpacerItem(3, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
-        row2_layout.addWidget(self.grid_density_spinbox)
-
+        row2_layout.addWidget(self.model_parameters_combo)
         surface_tracking_layout.addLayout(row2_layout)
 
+        # Row 3 → buttons
         row3_layout = QHBoxLayout()
         row3_layout.setSpacing(5)
         row3_layout.addWidget(self.generate_surface_path_button)
         row3_layout.addWidget(self.generate_feedforward_path_button)
         row3_layout.addWidget(self.display_path_button)
-
         surface_tracking_layout.addLayout(row3_layout)
 
         self.surface_tracking_group.setLayout(surface_tracking_layout)
@@ -515,6 +518,64 @@ class VolumePlanWidget_ST(QMainWindow):
         self.surface_tracking_group.setEnabled(False)
         # ---------------------------
 
+
+        # ---------------------------
+        # Live Surface Tracking Group
+        # ---------------------------
+
+        self.live_tracking_group = QGroupBox("Setup Live Surface Tracking")
+        self.live_tracking_group.setStyleSheet("""
+            QGroupBox { border: 1px dashed gray; margin-top: 10px; padding: 5px; }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+            }
+        """)
+
+        # Checkbox (Row 1)
+        self.enable_live_tracking_checkbox = QCheckBox("Enable live tracking")
+        self.enable_live_tracking_checkbox.setChecked(False)
+        self.enable_live_tracking_checkbox.stateChanged.connect(self.live_tracking)
+
+        row1_layout = QHBoxLayout()
+        row1_layout.setSpacing(5)
+        row1_layout.addWidget(self.enable_live_tracking_checkbox)
+
+        # Row 2: Stride + Offset
+        self.stride_label = QLabel("Stride (px):")
+        self.set_stride = QSpinBox()
+        self.set_stride.setRange(0, 1000)
+        self.set_stride.setSingleStep(1)
+        self.set_stride.setValue(5)
+        self.set_stride.valueChanged.connect(self.strideChanged.emit)
+
+        self.offset_label = QLabel("Offset (µm):")
+        self.set_offset = QDoubleSpinBox()
+        self.set_offset.setDecimals(2)
+        self.set_offset.setRange(0.0, 1000.0)
+        self.set_offset.setSingleStep(1.0)
+        self.set_offset.setValue(0.0)
+        self.set_offset.valueChanged.connect(self.offsetChanged.emit)
+
+
+        row2_layout = QHBoxLayout()
+        row2_layout.setSpacing(5)
+        row2_layout.addWidget(self.stride_label)
+        row2_layout.addWidget(self.set_stride)
+        row2_layout.addSpacing(10)
+        row2_layout.addWidget(self.offset_label)
+        row2_layout.addWidget(self.set_offset)
+
+        # Combine into main layout
+        live_tracking_layout = QVBoxLayout()
+        live_tracking_layout.addLayout(row1_layout)  # checkbox only
+        live_tracking_layout.addLayout(row2_layout)  # stride + offset
+
+        self.live_tracking_group.setLayout(live_tracking_layout)
+        layout.addWidget(self.live_tracking_group)
+        self.live_tracking_group.setEnabled(False)
+        # ---------------------------
 
         self.apply_all_box = QCheckBox('Apply to all: ')
         self.apply_all_box.setChecked(True)
@@ -572,6 +633,10 @@ class VolumePlanWidget_ST(QMainWindow):
         self.mode = 'bounds'  # initialize mode
         self.update_tile_table(self.value())  # initialize table
 
+
+        # ---------------------------
+        # Loading bounding boxes
+        # ---------------------------
         # self.load_xml_button = QPushButton("Load Bounding Boxes")
         # self.load_xml_button.clicked.connect(self.load_bounding_boxes)
         # layout.addWidget(self.load_xml_button)
@@ -580,20 +645,132 @@ class VolumePlanWidget_ST(QMainWindow):
         # self.bounding_box_dropdown.currentIndexChanged.connect(self.bounding_box_selected)
         # layout.addWidget(self.bounding_box_dropdown)
 
+        # Load button
+        self.load_xml_button = QPushButton("Load Bounding Boxes")
+        # self.load_xml_button.clicked.connect(self.loadBoundingBoxesRequested.emit)  # emits signal to trigger external logic
+        self.load_xml_button.clicked.connect(self.save_drawn_bounding_boxes)
+        layout.addWidget(self.load_xml_button)
+        self.bounding_box_dropdown = QComboBox()
+        # self.bounding_box_dropdown.addItem("Select Bounding Box")  # Placeholder
+        self.bounding_box_dropdown.currentIndexChanged.connect(self.bounding_box_selected)
+        layout.addWidget(self.bounding_box_dropdown)
+
+    def _update_initial_reference(self, ref: tuple):
+        print(f"Volume plan received updated initial reference: {ref}")
+        self.current_initial_reference = ref
+
+    def save_drawn_bounding_boxes(self):
+        viewer = self.instrument_view.viewer
+
+        # Find the Shapes layer with rectangles
+        shapes_layers = [
+            layer for layer in viewer.layers
+            if layer.__class__.__name__ == 'Shapes'
+            and any(s == 'rectangle' for s in layer.shape_type)
+        ]
+
+        if not shapes_layers:
+            print("No rectangle shapes layer found.")
+            return
+
+        shapes = shapes_layers[0]
+        rectangles = shapes.data
+        self.saved_bounding_boxes = [r.tolist() for r in rectangles]
+        print("Saved bounding boxes:", self.saved_bounding_boxes)
+
+        # Ask user for save location
+        default_name = "ODO_bounding_boxes.csv"
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save bounding boxes",
+            default_name,
+            filter="CSV Files (*.csv)"
+        )
+        if not save_path:
+            print("Save cancelled.")
+            return
+
+        # Write Napari shapes CSV format
+        with open(save_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["index", "shape-type", "vertex-index", "axis-0", "axis-1", "axis-2"])
+
+            for shape_index, rectangle in enumerate(self.saved_bounding_boxes):
+                for vertex_index, vertex in enumerate(rectangle):
+                    z, y, x = vertex
+                    writer.writerow([shape_index, "rectangle", vertex_index, z, y, x])
+
+        print(f"Bounding boxes saved to {save_path}")
+
+        # === Now update the dropdown immediately ===
+        pixel_size_um = 2.2727
+        um_to_mm = 1e-3
+        pixel_size_mm = pixel_size_um * um_to_mm
+
+        # Determine image height from viewer shape
+        image_height_px = viewer.layers[0].data.shape[1]
+
+        if self.current_initial_reference is not None:
+            ref_scanmin, ref_width_center = self.current_initial_reference
+        else:
+            print("⚠️ No initial boundary reference found! Assuming scan and width start from 0.")
+            ref_scanmin = 0.0
+            ref_width_center = 0.0
+
+        width_offset = 4.6544896-0.8292352
+        scan_offset1 = 1
+        scan_offset2 = 0.5
+        ref_width_max = ref_width_center + width_offset
+
+        bounding_boxes_mm = []
+
+        for rect in self.saved_bounding_boxes:
+            ys = [v[1] for v in rect]  # axis-1 = Y
+            xs = [v[2] for v in rect]  # axis-2 = X
+
+            # Scan axis (X, axis-2)
+            scanmin = round(min(xs) * pixel_size_mm + ref_scanmin, 3)-scan_offset1
+            scanmax = round(max(xs) * pixel_size_mm + ref_scanmin, 3)+scan_offset2
+
+            # Width axis (Y, axis-1) → flipped, then offset from ref_width_max
+            # flipped_ys = [image_height_px - y for y in ys]
+            # widthmin = round(ref_width_max - max(flipped_ys) * pixel_size_mm, 3)
+            # widthmax = round(ref_width_max - min(flipped_ys) * pixel_size_mm, 3)
+            widthmin = round(ref_width_max - max(ys) * pixel_size_mm, 3)
+            widthmax = round(ref_width_max - min(ys) * pixel_size_mm, 3)
+
+            bounding_boxes_mm.append((scanmin, scanmax, widthmin, widthmax))
+
+        self.update_bounding_box_dropdown(bounding_boxes_mm)
+
+
+    def update_bounding_box_dropdown(self, bounding_boxes):
+        self.bounding_boxes = bounding_boxes
+        self.bounding_box_dropdown.clear()
+        self.bounding_box_dropdown.addItem("Select Bounding Box")
+        for i, bbox in enumerate(bounding_boxes):
+            scanmin, scanmax, widthmin, widthmax = bbox
+            label = f"bbox {i+1}: scan=({scanmin}-{scanmax} mm), width=({widthmin}-{widthmax} mm)"
+            self.bounding_box_dropdown.addItem(label)
+
+    def live_tracking(self, state):
+        enabled = state == Qt.Checked
+        self.livetrackingRequested.emit(enabled)
+        # print("Live_tracking enabled", enabled)
+        self.set_stride.setEnabled(enabled)
 
     def generate_feedforward_path(self):
-        self.feedforwardpathRequested.emit()
-
+        model_param = self.model_parameters_combo.currentText()
+        self.feedforwardpathRequested.emit(model_param)
 
     def generate_path_display(self):
-        self.pathdisplayRequested.emit()
-
+        model_param = self.model_parameters_combo.currentText()
+        self.pathdisplayRequested.emit(model_param)
 
     def generate_surface_tracking_path(self):
         model = self.surface_tracking_model_combo.currentText()
-        grid_density_um = self.grid_density_spinbox.value()
-        z_speed_mms = self.set_z_speed.value()
-        self.surfaceTrackingPathGenerated.emit(model, grid_density_um, z_speed_mms)
+        model_param = self.model_parameters_combo.currentText()
+        self.surfaceTrackingPathGenerated.emit(model, model_param)
     
     def toggle_thresholding_group(self, state):
         enabled = state == Qt.Checked
@@ -613,12 +790,16 @@ class VolumePlanWidget_ST(QMainWindow):
     def surface_tracking(self, state):
         enabled = state == Qt.Checked
         self.enable_surface_tracking.emit(enabled)
-        self.set_z_speed.setEnabled(enabled)
+        self.enable_sync_tracking_checkbox.setEnabled(enabled)
         self.surface_tracking_model_combo.setEnabled(enabled)
-        self.grid_density_spinbox.setEnabled(enabled)
         self.generate_surface_path_button.setEnabled(enabled)
         self.display_path_button.setEnabled(enabled)
         self.generate_feedforward_path_button.setEnabled(enabled)
+        self.live_tracking_group.setEnabled(enabled)
+    
+    def sync_tracking(self, state):
+        enabled = state == Qt.Checked
+        self.enable_sync_tracking.emit(enabled)
     
     def calculate_percentile(self):
         # Example function to be triggered by button
@@ -636,14 +817,6 @@ class VolumePlanWidget_ST(QMainWindow):
 
     def coordinate_change_Profiler_2_ODO(self):
         print("Custom Action 2 triggered")
-
-    def update_bounding_box_dropdown(self, bounding_boxes):
-        self.bounding_boxes = bounding_boxes  # Store for later use
-        self.bounding_box_dropdown.blockSignals(True)
-        self.bounding_box_dropdown.clear()
-        self.bounding_box_dropdown.addItem("Select Bounding Box")
-        self.bounding_box_dropdown.addItems(bounding_boxes.keys())
-        self.bounding_box_dropdown.blockSignals(False)
 
     def bigstitcher_to_stage_position(self, bigstitcher_x, bigstitcher_y, bigstitcher_z):
         # TODO: Make this not a hard code
@@ -668,66 +841,49 @@ class VolumePlanWidget_ST(QMainWindow):
     
         return x_position_mm, y_position_mm, z_position_mm
     
+    # def bounding_box_selected(self, index):
+    #     if index == 0:
+    #         return  # "Select Bounding Box" selected
+    #     name = self.bounding_box_dropdown.currentText()
+    #     bbox = self.bounding_boxes[name]
+    #     min_coords = bbox['min']
+    #     min_coords = [min_coords[2], min_coords[0], min_coords[1]]
+    #     max_coords = bbox['max']
+    #     max_coords = [max_coords[2], max_coords[0], max_coords[1]]
+
+    #     # Convert coordinates using your function
+    #     stage_min = self.bigstitcher_to_stage_position(*min_coords)
+    #     stage_max = self.bigstitcher_to_stage_position(*max_coords)
+
+    #     # Update the bounds widget min and max coordinates
+    #     # Assuming dim_0 corresponds to X, dim_1 to Y, dim_2 to Z
+    #     self.dim_0_low.setValue(stage_min[2])  # Z_start
+    #     self.dim_0_high.setValue(stage_max[2])  # z_end
+    #     self.dim_1_low.setValue(stage_min[1])  # Y_start
+    #     self.dim_1_high.setValue(stage_max[1])  # Y_end
+    #     self.dim_2_low.setValue(stage_min[0])  # x_start
+    #     self.dim_2_high.setValue(stage_max[0])  # x_end
+
+    #     # Switch to bounds mode if not already in that mode
+    #     if self.mode != 'bounds':
+    #         self.mode = 'bounds'
+
+    #     # Trigger an update
+    #     self._on_change()
+
     def bounding_box_selected(self, index):
         if index == 0:
-            return  # "Select Bounding Box" selected
-        name = self.bounding_box_dropdown.currentText()
-        bbox = self.bounding_boxes[name]
-        min_coords = bbox['min']
-        min_coords = [min_coords[2], min_coords[0], min_coords[1]]
-        max_coords = bbox['max']
-        max_coords = [max_coords[2], max_coords[0], max_coords[1]]
+            return  # "Select Bounding Box" placeholder selected
 
-        # Convert coordinates using your function
-        stage_min = self.bigstitcher_to_stage_position(*min_coords)
-        stage_max = self.bigstitcher_to_stage_position(*max_coords)
+        # Get bbox tuple from list using (index - 1) to account for placeholder
+        bbox = self.bounding_boxes[index - 1]
+        scanmin, scanmax, widthmin, widthmax = bbox
 
-        # Update the bounds widget min and max coordinates
-        # Assuming dim_0 corresponds to X, dim_1 to Y, dim_2 to Z
-        self.dim_0_low.setValue(stage_min[2])  # Z_start
-        self.dim_0_high.setValue(stage_max[2])  # z_end
-        self.dim_1_low.setValue(stage_min[1])  # Y_start
-        self.dim_1_high.setValue(stage_max[1])  # Y_end
-        self.dim_2_low.setValue(stage_min[0])  # x_start
-        self.dim_2_high.setValue(stage_max[0])  # x_end
-
-        # Switch to bounds mode if not already in that mode
-        if self.mode != 'bounds':
-            self.mode = 'bounds'
-
-        # Trigger an update
+        self.dim_2_low.setValue(scanmin)
+        self.dim_2_high.setValue(scanmax)
+        self.dim_1_low.setValue(widthmin)
+        self.dim_1_high.setValue(widthmax)
         self._on_change()
-
-
-    def load_bounding_boxes(self):
-        # Open file dialog to select XML file
-        xml_file, _ = QFileDialog.getOpenFileName(self, "Open XML File", "", "XML Files (*.xml)")
-        if not xml_file:
-            return  # User canceled or closed the dialog
-
-        # Parse the XML file
-        import xml.etree.ElementTree as ET
-        tree = ET.parse(xml_file)
-        root = tree.getroot()
-
-        # Find all BoundingBoxDefinition elements
-        bounding_boxes = {}
-        for bbox_def in root.findall('.//BoundingBoxDefinition'):
-            name = bbox_def.get('name')
-            min_coords_text = bbox_def.find('min').text.strip()
-            max_coords_text = bbox_def.find('max').text.strip()
-
-            # Split the coordinates and convert to floats
-            min_coords = list(map(float, min_coords_text.split()))
-            max_coords = list(map(float, max_coords_text.split()))
-
-            # The coordinates are in the order [bigstitcher_y, bigstitcher_z, bigstitcher_x]
-            # Store them in a dictionary with the name as the key
-            bounding_boxes[name] = {'min': min_coords, 'max': max_coords}
-
-        # Update the dropdown menu with the names
-        self.update_bounding_box_dropdown(bounding_boxes)
-
 
     def update_tile_table(self, value: Union[GridRowsColumns, GridFromEdges, GridWidthHeight]) -> None:
         """
@@ -789,11 +945,26 @@ class VolumePlanWidget_ST(QMainWindow):
         table_row = self.tile_table.rowCount()
         self.tile_table.insertRow(table_row)
 
-        kwargs = {'row, column': [row, column],
-                  f'{self.coordinate_plane[0]} [{self.unit}]': self.tile_positions[row, column][0],
-                  f'{self.coordinate_plane[1]} [{self.unit}]': self.tile_positions[row, column][1],
-                  f'{self.coordinate_plane[2]} [{self.unit}]': self._scan_starts[row, column],
-                  f'{self.coordinate_plane[2]} max [{self.unit}]': self._scan_ends[row, column]}
+        # Determine if we should reverse the scan direction
+        z_start = self._scan_starts[row, column]
+        z_end = self._scan_ends[row, column]
+        if self.serpentine_scan and row % 2 == 1:
+            z_start, z_end = z_end, -z_end
+
+        kwargs = {
+            'row, column': [row, column],
+            f'{self.coordinate_plane[0]} [{self.unit}]': self.tile_positions[row, column][0],
+            f'{self.coordinate_plane[1]} [{self.unit}]': self.tile_positions[row, column][1],
+            f'{self.coordinate_plane[2]} [{self.unit}]': z_start,
+            f'{self.coordinate_plane[2]} max [{self.unit}]': z_end
+        }
+
+        # kwargs = {'row, column': [row, column],
+        #           f'{self.coordinate_plane[0]} [{self.unit}]': self.tile_positions[row, column][0],
+        #           f'{self.coordinate_plane[1]} [{self.unit}]': self.tile_positions[row, column][1],
+        #           f'{self.coordinate_plane[2]} [{self.unit}]': self._scan_starts[row, column],
+        #           f'{self.coordinate_plane[2]} max [{self.unit}]': self._scan_ends[row, column]}
+
         items = {}
         for header_col, header in enumerate(self.table_columns[:-1]):
             item = QTableWidgetItem()
