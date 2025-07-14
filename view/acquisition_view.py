@@ -182,8 +182,10 @@ class AcquisitionView(QWidget):
         if self.instrument_view.grab_frames_worker.is_running:  # stop livestream if running
             self.instrument_view.grab_frames_worker.quit()
 
-        # for worker in self.instrument_view.property_workers:
-        #     worker.pause()
+        for worker in self.instrument_view.property_workers:
+            worker.quit()
+        for worker in self.property_workers:
+            worker.quit()
 
         # write correct daq values if different from livestream
         for daq_name, daq in self.instrument.daqs.items():
