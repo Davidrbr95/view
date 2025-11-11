@@ -256,12 +256,14 @@ class NIWidget(BaseDeviceWidget):
         iterable = self.mappedpathGet(self.exposed_branches.copy(), name.split('.'))
         items = []
 
-        # if isinstance(iterable, (float, int, str)): 
-        #     # Create a tree item for scalar values and return early
-        #     item = QTreeWidgetItem(parent, [name.split('.')[-1], str(iterable)])  # Name and scalar value as item
+        # # --- SCALAR SAFEGUARD: always catch ints, floats, numpy scalars, strings ---
+        # if isinstance(iterable, (float, int, str, np.generic)) or not hasattr(iterable, "__iter__"):
+        #     item = QTreeWidgetItem(parent, [name.split('.')[-1], str(iterable)])
         #     items.append(item)
         #     self.check_to_hide(f'{name}', item)
         #     return items
+        # # ---------------------------------------------------------------------------
+
 
         for i, item in enumerate(iterable):
             key = item if hasattr(iterable, 'keys') else str(i)  # account for yaml typed

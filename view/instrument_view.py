@@ -242,7 +242,7 @@ class InstrumentView(QWidget):
                 break
         
         ### Change tunable lens
-        tunable_lens = self.instrument.tunable_lens['kdc101']
+        tunable_lens = self.instrument.tunable_lens['etl']
         tunable_lens.position_mm = tunable_lens.position_mm_dictionary[prefix]
 
         ### Change daq
