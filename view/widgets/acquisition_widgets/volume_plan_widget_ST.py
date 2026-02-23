@@ -138,6 +138,7 @@ class VolumePlanWidget_ST(QMainWindow):
     livetrackingRequested = Signal(bool)
     strideChanged = Signal(int)
     offsetChanged = Signal(float)
+    positionChanged = Signal(float)
     loadBoundingBoxesRequested = Signal()
 
     def __init__(self,
@@ -515,7 +516,7 @@ class VolumePlanWidget_ST(QMainWindow):
 
         self.surface_tracking_group.setLayout(surface_tracking_layout)
         layout.addWidget(self.surface_tracking_group)
-        self.surface_tracking_group.setEnabled(False)
+        self.surface_tracking_group.setEnabled(True)
         # ---------------------------
 
 
@@ -543,7 +544,7 @@ class VolumePlanWidget_ST(QMainWindow):
         row1_layout.addWidget(self.enable_live_tracking_checkbox)
 
         # Row 2: Stride + Offset
-        self.stride_label = QLabel("Stride (px):")
+        self.stride_label = QLabel("Stride (frames):")
         self.set_stride = QSpinBox()
         self.set_stride.setRange(0, 1000)
         self.set_stride.setSingleStep(1)
@@ -553,28 +554,38 @@ class VolumePlanWidget_ST(QMainWindow):
         self.offset_label = QLabel("Offset (µm):")
         self.set_offset = QDoubleSpinBox()
         self.set_offset.setDecimals(2)
-        self.set_offset.setRange(0.0, 1000.0)
+        self.set_offset.setRange(-1000.0, 1000.0)
         self.set_offset.setSingleStep(1.0)
         self.set_offset.setValue(0.0)
         self.set_offset.valueChanged.connect(self.offsetChanged.emit)
 
+        # New: Position (X-start) input
+        self.position_label = QLabel("Start at X (mm):")
+        self.set_position = QDoubleSpinBox()
+        self.set_position.setDecimals(3)
+        self.set_position.setRange(-200.0, 200.0)
+        self.set_position.setSingleStep(1.0)
+        self.set_position.setValue(0.0)
+        self.set_position.valueChanged.connect(self.positionChanged.emit)
 
+        # Layout for stride + offset + position
         row2_layout = QHBoxLayout()
-        row2_layout.setSpacing(5)
         row2_layout.addWidget(self.stride_label)
         row2_layout.addWidget(self.set_stride)
-        row2_layout.addSpacing(10)
         row2_layout.addWidget(self.offset_label)
         row2_layout.addWidget(self.set_offset)
+        row2_layout.addWidget(self.position_label)
+        row2_layout.addWidget(self.set_position)
 
         # Combine into main layout
         live_tracking_layout = QVBoxLayout()
-        live_tracking_layout.addLayout(row1_layout)  # checkbox only
-        live_tracking_layout.addLayout(row2_layout)  # stride + offset
+        live_tracking_layout.addLayout(row1_layout)
+        live_tracking_layout.addLayout(row2_layout)
 
         self.live_tracking_group.setLayout(live_tracking_layout)
         layout.addWidget(self.live_tracking_group)
-        self.live_tracking_group.setEnabled(False)
+        self.live_tracking_group.setEnabled(True)
+
         # ---------------------------
 
         self.apply_all_box = QCheckBox('Apply to all: ')
@@ -718,8 +729,8 @@ class VolumePlanWidget_ST(QMainWindow):
             ref_width_center = 0.0
 
         width_offset = 4.6544896-0.8292352
-        scan_offset1 = 1
-        scan_offset2 = 0.5
+        scan_offset1 = 2
+        scan_offset2 = 1
         ref_width_max = ref_width_center + width_offset
 
         bounding_boxes_mm = []
