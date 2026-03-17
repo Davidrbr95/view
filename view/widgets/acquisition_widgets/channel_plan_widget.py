@@ -275,6 +275,7 @@ class ChannelPlanWidget(QTabWidget):
 
 
     def parse_coordinates(self, s: str) -> list:
+        s = s.replace("np.int64", "")
         x, y = ast.literal_eval(s)
         return [int(x), int(y)]
     
