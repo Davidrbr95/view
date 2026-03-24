@@ -965,7 +965,7 @@ class VolumePlanWidget_ST(QMainWindow):
         kwargs = {
             'row, column': [row, column],
             f'{self.coordinate_plane[0]} [{self.unit}]': self.tile_positions[row, column][0],
-            f'{self.coordinate_plane[1]} [{self.unit}]': self.tile_positions[row, column][1],
+            f'{self.coordinate_plane[1]} [{self.unit}]': self.tile_positions[row, column][1]-self._fov_dimensions[1],
             f'{self.coordinate_plane[2]} [{self.unit}]': z_start,
             f'{self.coordinate_plane[2]} max [{self.unit}]': z_end
         }
