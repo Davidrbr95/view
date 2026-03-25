@@ -126,7 +126,8 @@ class AcquisitionView(QWidget):
 
         # Set app events
         app = QApplication.instance()
-        app.aboutToQuit.connect(self.update_config_on_quit)  # query if config should be saved and where
+        # Disabled by request: never prompt to overwrite YAML on app close.
+        # app.aboutToQuit.connect(self.update_config_on_quit)  # query if config should be saved and where
         self.config_save_to = self.acquisition.config_path
         app.lastWindowClosed.connect(self.close)  # shut everything down when closing
 
@@ -740,11 +741,12 @@ class AcquisitionView(QWidget):
         """
         Add functionality to close function to save device properties to instrument config
         """
-
-        return_value = self.update_config_query()
-        if return_value == QMessageBox.Ok:
-            self.acquisition.update_current_state_config()
-            self.acquisition.save_config(self.config_save_to)
+        # Disabled by request: never overwrite YAML files on close.
+        # return_value = self.update_config_query()
+        # if return_value == QMessageBox.Ok:
+        #     self.acquisition.update_current_state_config()
+        #     self.acquisition.save_config(self.config_save_to)
+        return
 
     def update_config_query(self) -> None:
         """

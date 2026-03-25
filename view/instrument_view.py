@@ -86,6 +86,7 @@ class InstrumentView(QWidget):
 
         # Setup napari window
         self.viewer = napari.Viewer(title='View', ndisplay=2, axis_labels=('x', 'y'))
+        self._disable_napari_welcome_overlay()
 
         # Set up instrument widgets
         for device_name, device_specs in self.instrument.config['instrument']['devices'].items():
@@ -106,7 +107,8 @@ class InstrumentView(QWidget):
 
         # Set app events
         app = QApplication.instance()
-        app.aboutToQuit.connect(self.update_config_on_quit)  # query if config should be saved and where
+        # Disabled by request: never prompt to overwrite YAML on app close.
+        # app.aboutToQuit.connect(self.update_config_on_quit)  # query if config should be saved and where
         self.config_save_to = self.config_path
         app.lastWindowClosed.connect(self.close)  # shut everything down when closing
 
@@ -127,6 +129,18 @@ class InstrumentView(QWidget):
                     self.log.error(f'Daq {daq_name} has a livestreaming task but no corresponding data acquisition '
                                 f'task in instrument yaml.')
                     raise ValueError
+
+    def _disable_napari_welcome_overlay(self) -> None:
+        """Hide napari's default gray welcome text overlay in the canvas."""
+        try:
+            qt_viewer = self.viewer.window._qt_viewer
+            if hasattr(qt_viewer, "set_welcome_visible"):
+                qt_viewer.set_welcome_visible(False)
+            elif hasattr(qt_viewer, "_welcome_widget"):
+                qt_viewer._show_welcome_screen = False
+                qt_viewer._welcome_widget.set_welcome_visible(False)
+        except Exception:
+            pass
 
     def setup_stage_widgets(self) -> None:
         """
@@ -778,11 +792,12 @@ class InstrumentView(QWidget):
         """
         Add functionality to close function to save device properties to instrument config
         """
-
-        return_value = self.update_config_query()
-        if return_value == QMessageBox.Ok:
-            self.instrument.update_current_state_config()
-            self.instrument.save_config(self.config_save_to)
+        # Disabled by request: never overwrite YAML files on close.
+        # return_value = self.update_config_query()
+        # if return_value == QMessageBox.Ok:
+        #     self.instrument.update_current_state_config()
+        #     self.instrument.save_config(self.config_save_to)
+        return
 
     def update_config_query(self) -> Literal[0, 1]:
         """
