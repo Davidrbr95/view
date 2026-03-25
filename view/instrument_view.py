@@ -42,9 +42,13 @@ class InstrumentView(QWidget):
         self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.log.setLevel(log_level)
         # set all loggers to log_level
-        loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
-        for logger in loggers:
-            logger.setLevel(log_level)
+        # loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
+        # for logger in loggers:
+        #     logger.setLevel(log_level)
+        for name in list(logging.root.manager.loggerDict):
+            if name.startswith("vispy"):
+                continue
+            logging.getLogger(name).setLevel(log_level)
 
         # initialize camera name tracker
         self._active_camera = None
