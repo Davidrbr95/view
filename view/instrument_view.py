@@ -87,6 +87,7 @@ class InstrumentView(QWidget):
         # Setup napari window
         self.viewer = napari.Viewer(title='View', ndisplay=2, axis_labels=('x', 'y'))
         self._disable_napari_welcome_overlay()
+        self._hide_napari_menu_bar()
 
         # Set up instrument widgets
         for device_name, device_specs in self.instrument.config['instrument']['devices'].items():
@@ -139,6 +140,17 @@ class InstrumentView(QWidget):
             elif hasattr(qt_viewer, "_welcome_widget"):
                 qt_viewer._show_welcome_screen = False
                 qt_viewer._welcome_widget.set_welcome_visible(False)
+        except Exception:
+            pass
+
+    def _hide_napari_menu_bar(self) -> None:
+        """Hide napari's top menu bar (File/View/Layers/etc.)."""
+        try:
+            qt_window = self.viewer.window._qt_window
+            menu_bar = qt_window.menuBar()
+            if menu_bar is not None:
+                menu_bar.setVisible(False)
+                menu_bar.hide()
         except Exception:
             pass
 
