@@ -1,5 +1,5 @@
 from ruamel.yaml import YAML
-from qtpy.QtCore import Slot, Signal
+from qtpy.QtCore import Slot, Signal, QTimer
 from qtpy.QtGui import QMouseEvent
 from pathlib import Path
 import importlib
@@ -112,6 +112,7 @@ class InstrumentView(QWidget):
         # app.aboutToQuit.connect(self.update_config_on_quit)  # query if config should be saved and where
         self.config_save_to = self.config_path
         app.lastWindowClosed.connect(self.close)  # shut everything down when closing
+        self._fit_viewer_to_screen_default()
 
     def setup_daqs(self)-> None:
         """
@@ -153,6 +154,20 @@ class InstrumentView(QWidget):
                 menu_bar.hide()
         except Exception:
             pass
+
+    def _fit_viewer_to_screen_default(self) -> None:
+        """Open napari main window maximized by default (screen-fit)."""
+        def _maximize():
+            try:
+                qt_window = self.viewer.window._qt_window
+                if qt_window is not None:
+                    qt_window.showMaximized()
+                    qt_window.raise_()
+                    qt_window.activateWindow()
+            except Exception:
+                pass
+
+        QTimer.singleShot(0, _maximize)
 
     def setup_stage_widgets(self) -> None:
         """
