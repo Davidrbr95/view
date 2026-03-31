@@ -185,6 +185,7 @@ class VolumePlanWidget_ST(QMainWindow):
         self.start = None   # tile to start at. If none, then default is first tile
         self.stop = None    # tile to end at. If none, then default is last tile
         self.serpentine_scan = False
+        self.bounding_boxes = []
 
         # ---------------------------
         # Set Coordinate Group
@@ -883,8 +884,14 @@ class VolumePlanWidget_ST(QMainWindow):
     #     self._on_change()
 
     def bounding_box_selected(self, index):
-        if index == 0:
+        if index <= 0:
             return  # "Select Bounding Box" placeholder selected
+        if not hasattr(self, "bounding_boxes"):
+            return
+        if not self.bounding_boxes:
+            return
+        if (index - 1) >= len(self.bounding_boxes):
+            return
 
         # Get bbox tuple from list using (index - 1) to account for placeholder
         bbox = self.bounding_boxes[index - 1]
