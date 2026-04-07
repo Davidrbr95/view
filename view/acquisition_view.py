@@ -54,6 +54,7 @@ class AcquisitionView(QWidget):
         # Eventual threads
         self.grab_fov_positions_worker = None
         self.property_workers = []
+        self._is_closing = False
 
         # create workers for latest image taken by cameras
         for camera_name, camera in self.instrument.cameras.items():
@@ -485,8 +486,7 @@ class AcquisitionView(QWidget):
         """
 
         self.grab_fov_positions_worker = self.grab_fov_positions()
-        self.grab_fov_positions_worker.yielded.connect(lambda pos: setattr(self.volume_plan, 'fov_position', pos))
-        self.grab_fov_positions_worker.yielded.connect(lambda pos: setattr(self.volume_model, 'fov_position', pos))
+        self.grab_fov_positions_worker.yielded.connect(self._on_fov_position_update)
         self.grab_fov_positions_worker.start()
 
         # self.grab_xz_positions_worker = self.grab_xz_positions()
@@ -522,6 +522,26 @@ class AcquisitionView(QWidget):
                         pass
                     sleep(.1)
             yield fov_pos
+
+    def _on_fov_position_update(self, pos) -> None:
+        if self._is_closing:
+            return
+
+        try:
+            setattr(self.volume_plan, 'fov_position', pos)
+        except RuntimeError as exc:
+            # Ignore late queued callbacks during teardown.
+            if "has been deleted" in str(exc):
+                return
+            raise
+
+        try:
+            setattr(self.volume_model, 'fov_position', pos)
+        except RuntimeError as exc:
+            # Happens when worker still emits after GL widget is deleted.
+            if "has been deleted" in str(exc):
+                return
+            raise
 
     def create_operation_widgets(self, device_name: str, operation_name: str, operation_specs: dict) -> None:
         """
@@ -783,10 +803,17 @@ class AcquisitionView(QWidget):
         """
         Close operations and end threads
         """
+        self._is_closing = True
 
         for worker in self.property_workers:
             worker.quit()
-        self.grab_fov_positions_worker.quit()
+        if self.grab_fov_positions_worker is not None:
+            try:
+                self.grab_fov_positions_worker.yielded.disconnect(self._on_fov_position_update)
+            except Exception:
+                pass
+            self.grab_fov_positions_worker.quit()
+            self.grab_fov_positions_worker = None
         for device_name, operation_dictionary in self.acquisition.config['acquisition']['operations'].items():
             for operation_name, operation_specs in operation_dictionary.items():
                 operation_type = operation_specs['type']
