@@ -524,8 +524,8 @@ class AcquisitionView(QWidget):
             yield fov_pos
 
     def _on_fov_position_update(self, pos) -> None:
-        if self._is_closing:
-            return
+        # if self._is_closing:
+        #     return
 
         try:
             setattr(self.volume_plan, 'fov_position', pos)
@@ -709,6 +709,121 @@ class AcquisitionView(QWidget):
             for ch in self.channel_plan.channels:
                 for tile in sliced_value:
                     tiles.append(self.write_tile(ch, tile))
+        tiles = self._apply_serpentine_scan_to_tiles(tiles)
+        return tiles
+
+    def _active_scan_axis(self) -> str:
+        for _, scanning_stage in self.instrument.scanning_stages.items():
+            return str(scanning_stage.instrument_axis)
+        if len(self.coordinate_plane) >= 3:
+            return str(self.coordinate_plane[2]).strip('-')
+        return 'x'
+
+    def _get_serpentine_scan_config(self) -> dict:
+        acquisition_cfg = self.acquisition.config.get('acquisition', {})
+        serp_cfg = acquisition_cfg.get('serpentine_scan', {}) or {}
+        enabled = bool(serp_cfg.get('enabled', False))
+        target_cameras = serp_cfg.get('target_cameras', ["Profiler_camera", "ODO_camera"])
+        if not isinstance(target_cameras, (list, tuple, set)):
+            target_cameras = [target_cameras]
+        target_cameras = [str(cam) for cam in target_cameras if cam is not None]
+        policy = str(serp_cfg.get('first_tile_policy', 'auto_endpoint')).strip().lower()
+        if policy not in {'auto_endpoint', 'forward', 'backward'}:
+            policy = 'auto_endpoint'
+        camera_name = str(getattr(self, "active_camera", self.instrument_view.active_camera))
+        return {
+            "enabled": enabled,
+            "camera_name": camera_name,
+            "enabled_for_camera": enabled and camera_name in target_cameras,
+            "target_cameras": target_cameras,
+            "policy": policy,
+            "scan_axis": self._active_scan_axis(),
+        }
+
+    @staticmethod
+    def _scan_span_bounds_mm(tile: dict, scan_axis: str):
+        position = tile.get('position_mm', {})
+        start_mm = float(position.get(scan_axis, 0.0))
+        step_size_um = float(tile.get('step_size', 0.0))
+        steps_raw = int(tile.get('steps', 0))
+        stop_mm = start_mm + (step_size_um * steps_raw / 1000.0)
+        return min(start_mm, stop_mm), max(start_mm, stop_mm)
+
+    @staticmethod
+    def _origin_distance_from_endpoint(tile: dict, scan_axis: str, endpoint_mm: float) -> float:
+        position = tile.get('position_mm', {})
+        coords = {
+            'x': float(position.get('x', 0.0)),
+            'y': float(position.get('y', 0.0)),
+            'z': float(position.get('z', 0.0)),
+        }
+        if scan_axis in coords:
+            coords[scan_axis] = float(endpoint_mm)
+        return float(np.sqrt(coords['x'] ** 2 + coords['y'] ** 2 + coords['z'] ** 2))
+
+    @staticmethod
+    def _choose_first_direction_for_auto_endpoint(tiles: list, scan_axis: str) -> str:
+        if len(tiles) == 0:
+            return 'forward'
+        last_tile = tiles[-1]
+        scan_min, scan_max = AcquisitionView._scan_span_bounds_mm(last_tile, scan_axis)
+        endpoint_forward = scan_max if (len(tiles) - 1) % 2 == 0 else scan_min
+        endpoint_backward = scan_min if (len(tiles) - 1) % 2 == 0 else scan_max
+        forward_dist = AcquisitionView._origin_distance_from_endpoint(last_tile, scan_axis, endpoint_forward)
+        backward_dist = AcquisitionView._origin_distance_from_endpoint(last_tile, scan_axis, endpoint_backward)
+        if backward_dist < forward_dist:
+            return 'backward'
+        return 'forward'
+
+    def _apply_serpentine_scan_to_tiles(self, tiles: list) -> list:
+        serp_cfg = self._get_serpentine_scan_config()
+        if not serp_cfg["enabled_for_camera"] or len(tiles) == 0:
+            return tiles
+
+        scan_axis = serp_cfg["scan_axis"]
+        policy = serp_cfg["policy"]
+        if policy == 'forward':
+            first_direction = 'forward'
+        elif policy == 'backward':
+            first_direction = 'backward'
+        else:
+            first_direction = self._choose_first_direction_for_auto_endpoint(tiles, scan_axis)
+
+        first_is_forward = first_direction == 'forward'
+
+        for idx, tile in enumerate(tiles):
+            position = tile.get('position_mm', {})
+            if scan_axis not in position:
+                continue
+            scan_min, scan_max = self._scan_span_bounds_mm(tile, scan_axis)
+            steps_abs = abs(int(tile.get('steps', 0)))
+            step_mag_um = abs(float(tile.get('step_size', 0.0)))
+            forward_tile = ((idx % 2 == 0) and first_is_forward) or ((idx % 2 == 1) and not first_is_forward)
+
+            if forward_tile:
+                scan_start_mm = scan_min
+                scan_stop_mm = scan_max
+                step_signed_um = step_mag_um
+                direction_name = 'forward'
+                direction_sign = 1
+            else:
+                scan_start_mm = scan_max
+                scan_stop_mm = scan_min
+                step_signed_um = -step_mag_um
+                direction_name = 'backward'
+                direction_sign = -1
+
+            position[scan_axis] = float(scan_start_mm)
+            tile['position_mm'] = position
+            tile['steps'] = steps_abs
+            tile['step_size'] = float(step_signed_um)
+            tile['scan_stop_mm'] = float(scan_stop_mm)
+            tile['scan_direction'] = direction_name
+            tile['scan_direction_sign'] = int(direction_sign)
+            tile['scan_axis'] = scan_axis
+            tile['serpentine_scan_enabled'] = True
+            tile['serpentine_first_tile_policy'] = policy
+            tile['serpentine_target_camera'] = serp_cfg["camera_name"]
         return tiles
 
     def write_tile(self, channel: str, tile) -> dict:
