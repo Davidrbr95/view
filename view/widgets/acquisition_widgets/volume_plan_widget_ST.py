@@ -715,7 +715,10 @@ class VolumePlanWidget_ST(QMainWindow):
         print(f"Bounding boxes saved to {save_path}")
 
         # === Now update the dropdown immediately ===
-        pixel_size_um = 2.2727
+        calibration = getattr(self.acquisition_view, "odo_calibration", None)
+        if calibration is None:
+            raise RuntimeError("ODO calibration is not available from the acquisition view.")
+        pixel_size_um = float(calibration.pixel_size_um)
         um_to_mm = 1e-3
         pixel_size_mm = pixel_size_um * um_to_mm
 
@@ -729,7 +732,11 @@ class VolumePlanWidget_ST(QMainWindow):
             ref_scanmin = 0.0
             ref_width_center = 0.0
 
-        width_offset = 4.6544896-0.8292352
+        odo_fov_y_mm = float(calibration.full_fov_mm)
+        nodo_fov_y_mm = float(
+            self.instrument_view.config["acquisition_view"]["fov_dimensions_new"]["NODO_camera"][1]
+        )
+        width_offset = odo_fov_y_mm - nodo_fov_y_mm
         scan_offset1 = 2
         scan_offset2 = 1
         ref_width_max = ref_width_center + width_offset
