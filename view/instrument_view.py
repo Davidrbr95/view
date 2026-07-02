@@ -98,7 +98,7 @@ class InstrumentView(QWidget):
         # setup daq with livestreaming tasks
         self.setup_daqs()
         self.setup_channel_widget()
-        self.setup_laser_widgets()
+        # self.setup_laser_widgets()
         self.setup_daq_widgets()
         self.setup_filter_wheel_widgets()
         self.setup_stage_widgets()
@@ -775,10 +775,24 @@ class InstrumentView(QWidget):
 
         widgets = []
         for key, dictionary in self.__dict__.items():
+            if key == "laser_widgets":
+                continue
             if '_widgets' in key:
                 widgets.extend(dictionary.values())
         for widget in widgets:
-            if widget not in self.viewer.window._qt_window.findChildren(type(widget)):
+            try:
+                widget_title = widget.windowTitle()
+            except RuntimeError as exc:
+                self.log.warning(f"Skipping deleted undocked widget during startup: {exc}")
+                continue
+
+            try:
+                already_parented = widget in self.viewer.window._qt_window.findChildren(type(widget))
+            except RuntimeError as exc:
+                self.log.warning(f"Skipping invalid undocked widget '{widget_title}' during startup: {exc}")
+                continue
+
+            if not already_parented:
                 # print("This is", widget.windowTitle())
                 # if widget.windowTitle() == "tunable_lens kdc101":
                 #     # print("Nice found it!")
@@ -792,7 +806,11 @@ class InstrumentView(QWidget):
                 #     # print(device)
 
 
-                undocked_widget = self.viewer.window.add_dock_widget(widget, name=widget.windowTitle())
+                try:
+                    undocked_widget = self.viewer.window.add_dock_widget(widget, name=widget_title)
+                except RuntimeError as exc:
+                    self.log.warning(f"Could not add undocked widget '{widget_title}': {exc}")
+                    continue
                 undocked_widget.setFloating(True)
                 # hide widget if empty property widgets
                 if getattr(widget, 'property_widgets', False) == {}:
