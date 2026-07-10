@@ -188,6 +188,7 @@ class AcquisitionView(QWidget):
             worker.quit()
         for worker in self.property_workers:
             worker.quit()
+        self.stop_fov_position()
 
         # write correct daq values if different from livestream
         for daq_name, daq in self.instrument.daqs.items():
@@ -485,6 +486,7 @@ class AcquisitionView(QWidget):
         Set up live position thread
         """
 
+        self.stop_fov_position()
         self.grab_fov_positions_worker = self.grab_fov_positions()
         self.grab_fov_positions_worker.yielded.connect(self._on_fov_position_update)
         self.grab_fov_positions_worker.start()
@@ -492,6 +494,27 @@ class AcquisitionView(QWidget):
         # self.grab_xz_positions_worker = self.grab_xz_positions()
         # self.grab_xz_positions_worker.yielded.connect(lambda pos: self.write_position(pos))
         # self.grab_xz_positions_worker.start()
+
+    def stop_fov_position(self) -> None:
+        """
+        Stop the live FOV position polling worker.
+
+        This worker reads stage.position_mm in a loop.  For MS2000 stages that
+        sends serial WHERE commands, so it must not run during acquisition where
+        it can compete with scan setup, stage telemetry, and surface tracking.
+        """
+        worker = self.grab_fov_positions_worker
+        if worker is None:
+            return
+        try:
+            worker.yielded.disconnect(self._on_fov_position_update)
+        except Exception:
+            pass
+        try:
+            worker.quit()
+        except Exception:
+            pass
+        self.grab_fov_positions_worker = None
 
     def write_position(self, pos):
         print('Write_position', pos)
@@ -518,7 +541,7 @@ class AcquisitionView(QWidget):
                     try:
                         pos = stage.position_mm
                         fov_pos[index] = pos if pos is not None else self.volume_plan.fov_position[index]
-                    except ValueError as e:  # Tigerbox sometime coughs up garbage. Locking issue?
+                    except Exception:  # Stage serial reads can fail during shutdown/acquisition transitions.
                         pass
                     sleep(.1)
             yield fov_pos
@@ -922,13 +945,7 @@ class AcquisitionView(QWidget):
 
         for worker in self.property_workers:
             worker.quit()
-        if self.grab_fov_positions_worker is not None:
-            try:
-                self.grab_fov_positions_worker.yielded.disconnect(self._on_fov_position_update)
-            except Exception:
-                pass
-            self.grab_fov_positions_worker.quit()
-            self.grab_fov_positions_worker = None
+        self.stop_fov_position()
         for device_name, operation_dictionary in self.acquisition.config['acquisition']['operations'].items():
             for operation_name, operation_specs in operation_dictionary.items():
                 operation_type = operation_specs['type']
