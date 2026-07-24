@@ -946,10 +946,35 @@ class AcquisitionView(QWidget):
         for worker in self.property_workers:
             worker.quit()
         self.stop_fov_position()
+
+        # Some acquisition implementations retain multiprocessing workers for
+        # camera preinitialization.  Give them a chance to shut down even when
+        # the main Qt window was closed directly rather than through a custom
+        # workflow close button.
+        shutdown_runtime = getattr(self.acquisition, "shutdown_for_application_close", None)
+        if callable(shutdown_runtime):
+            shutdown_runtime(timeout_s=10.0)
+
         for device_name, operation_dictionary in self.acquisition.config['acquisition']['operations'].items():
             for operation_name, operation_specs in operation_dictionary.items():
-                operation_type = operation_specs['type']
-                operation = getattr(self.acquisition, inflection.pluralize(operation_type))[device_name][operation_name]
+                operation_type = operation_specs.get('type', None)
+                if not operation_type:
+                    self.log.debug(f'{device_name} {operation_name} has no operation type; skipping close')
+                    continue
+                operation_group = getattr(self.acquisition, inflection.pluralize(operation_type), None)
+                if operation_group is None:
+                    # Some YAML entries are runtime configuration (for example
+                    # startup_frame_trim), not instantiated Voxel operations.
+                    self.log.debug(
+                        f'{device_name} {operation_name} ({operation_type}) is configuration-only; '
+                        'skipping close'
+                    )
+                    continue
+                try:
+                    operation = operation_group[device_name][operation_name]
+                except (KeyError, TypeError):
+                    self.log.debug(f'{device_name} {operation_name} was not instantiated; skipping close')
+                    continue
                 try:
                     operation.close()
                 except AttributeError:
